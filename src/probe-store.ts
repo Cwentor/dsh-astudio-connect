@@ -29,6 +29,13 @@ export interface AStudioProbeFile {
   probes: AStudioProbeRecord[]
 }
 
+/** Probe store surface used by the probe service. */
+export interface AStudioProbeStore {
+  get(account: string, modelId: string): AStudioProbeRecord | undefined
+  put(record: AStudioProbeRecord): Promise<void>
+  clear(account: string): Promise<void>
+}
+
 /** File path for probe records. */
 export function astudioProbePath(): string {
   return join(resolveDshHome(), ASTRO_PROBE_FILENAME)
