@@ -14,6 +14,7 @@ import type { AStudioCredentialStore } from './auth.ts'
 import type { AStudioCatalog, AStudioModelInfo } from './catalog.ts'
 import type { AStudioUpstreamResult, UpstreamErrorKind } from './upstream.ts'
 import type { AStudioUpstreamClient } from './upstream.ts'
+import { bindToUsablePort, hostIsLoopback, originIsLoopback } from './loopback.ts'
 
 /** Minimal logger surface. */
 export interface ShimLogger {
@@ -50,22 +51,6 @@ const KIND_STATUS: Readonly<Record<UpstreamErrorKind, number>> = {
   rate: 429,
   server: 502,
   client: 400,
-}
-
-/** Check the Host header names a loopback interface. */
-function hostIsLoopback(host: string | undefined): boolean {
-  if (!host) return false
-  const h = host.split(':')[0]?.toLowerCase() ?? ''
-  return h === '127.0.0.1' || h === 'localhost' || h === '[::1]'
-}
-
-/** Check the Origin header is loopback (or absent for non-browser clients). */
-function originIsLoopback(origin: string | undefined): boolean {
-  if (!origin) return true // non-browser clients don't send Origin
-  const o = origin.split(':')[0]?.toLowerCase() ?? ''
-  return o === 'http' || o === 'https'
-    ? origin.includes('127.0.0.1') || origin.includes('localhost') || origin.includes('[::1]')
-    : false
 }
 
 /** Check the Content-Type is application/json. */
@@ -134,10 +119,15 @@ export function createAStudioShim(options: AStudioShimOptions): AStudioShim {
     void handle(req, res)
   })
 
-  const ready: Promise<void> = new Promise((resolve, reject) => {
-    server.once('error', reject)
-    server.listen(0, '127.0.0.1', () => resolve())
-  })
+  // Bind an ephemeral port fetch will actually connect to: the OS can hand out
+  // one of the fetch standard's blocked ports, and every pi-ai call would then
+  // fail with `TypeError: fetch failed` against a listener that is otherwise up.
+  const ready: Promise<void> = bindToUsablePort(server, {
+    host: '127.0.0.1',
+    onBlockedPort: (port, attempt) => {
+      logger?.warn(`dsh-astudio-connect: port ${port} is blocked for fetch; rebinding (attempt ${attempt})`)
+    },
+  }).then(() => undefined)
 
   const baseUrl = (): string => {
     const address = server.address()
