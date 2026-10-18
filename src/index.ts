@@ -19,6 +19,9 @@ import { createAStudioVisibilityStore } from './visibility-store.ts'
 import { writeHostHeartbeat, clearHostHeartbeat } from './host-heartbeat.ts'
 import { registerAStudioUpdateRoute } from './update-route.ts'
 import { ASTRO_VERSION } from './version.ts'
+import { createAStudioProbeStore } from './probe-store.ts'
+import { createAStudioProbeService } from './probe-service.ts'
+import { createAStudioProbeKey, registerAStudioProbeRoute } from './probe-route.ts'
 
 export { ASTRO_PROVIDER, ASTRO_STREAM_IDLE_TIMEOUT_MS, createAStudioAdapter } from './adapter.ts'
 export { createAStudioShim, type AStudioShim } from './shim.ts'
@@ -69,6 +72,7 @@ export function apply(ctx: Context, config: Config): void {
     token: () => store.resolve(),
     visibility,
   })
+  const probeStore = createAStudioProbeStore()
 
   const shim = createAStudioShim({
     store,
@@ -116,6 +120,18 @@ export function apply(ctx: Context, config: Config): void {
 
     // Register the update route on the host web server.
     registerAStudioUpdateRoute(ctx, { currentVersion: ASTRO_VERSION })
+
+    // Register the probe route on the host web server.
+    const probeService = createAStudioProbeService({
+      upstream,
+      token: () => store.resolve(),
+      store: probeStore,
+    })
+    const probeKey = createAStudioProbeKey()
+    registerAStudioProbeRoute(ctx, {
+      service: probeService,
+      invalidate: () => { void catalog.refresh().catch(() => {}) },
+    }, probeKey)
 
     // The host bundle is live: write a heartbeat so the status CLI can report
     // host health without a browser. Cleared on disposal; a stale heartbeat after
