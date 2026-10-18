@@ -1,4 +1,5 @@
 import z from "@deepseek-ai/schemastery";
+import "@earendil-works/pi-ai";
 import "@deepseek-ai/dsh-llm";
 import { PiAiAdapter } from "@deepseek-ai/dsh-llm-pi-ai";
 import { Context } from "@deepseek-ai/cordis";
@@ -48,12 +49,24 @@ declare function createAStudioUpstream(options?: AStudioUpstreamOptions): {
   chat: (token: string, body: unknown, signal?: AbortSignal) => Promise<AStudioUpstreamResult>;
 };
 //#endregion
+//#region src/visibility-store.d.ts
+/** Visibility store surface used by the catalog. */
+interface AStudioVisibilityStore {
+  hidden(identity: string): readonly string[];
+  setVisible(identity: string, modelId: string, visible: boolean): Promise<void>;
+}
+//#endregion
 //#region src/catalog.d.ts
 /** Info for a single model. */
 interface AStudioModelInfo {
   id: string;
   name: string;
-  reasoning: boolean;
+  supportsImages?: boolean;
+  reasoning?: {
+    supports?: boolean;
+    supportedEfforts?: string[];
+    canDisableThinking?: boolean;
+  };
   contextWindow: number;
   maxTokens: number;
 }
@@ -63,6 +76,12 @@ interface AStudioCatalog {
   current(): readonly AStudioModelInfo[];
   /** Force a refresh from the upstream. */
   refresh(): Promise<void>;
+  /** Where the current models came from. */
+  source(): 'live' | 'saved' | 'fallback';
+  /** When the current models were fetched, for live and saved sources. */
+  fetchedAtMs(): number | undefined;
+  /** Model ids hidden by the current identity. */
+  hiddenModelIds(): readonly string[];
 }
 /** Options for creating a catalog. */
 interface AStudioCatalogOptions {
@@ -70,6 +89,12 @@ interface AStudioCatalogOptions {
   token: () => string | undefined;
   /** Override the base URL for /v1/models (used by tests). */
   baseUrl?: string;
+  /** Override the identity used for catalog persistence. */
+  identity?: string;
+  /** Override the catalog snapshot path. */
+  catalogPath?: string;
+  /** Visibility store used to report hidden model ids. */
+  visibility?: AStudioVisibilityStore;
 }
 /** Default built-in catalog — used when the upstream /v1/models is unavailable. */
 declare const DEFAULT_CATALOG: readonly AStudioModelInfo[];
@@ -84,6 +109,13 @@ declare function createAStudioCatalog(options: AStudioCatalogOptions): AStudioCa
 interface AStudioCredentialStore {
   /** Resolve the current bearer token, or undefined when unavailable. */
   resolve(): AStudioCredential;
+}
+/** Secret-free sign-in summary for status and doctor output. */
+interface AStudioAuthStatus {
+  state: 'signed-in' | 'signed-out';
+  configPath: string;
+  tokenLength?: number;
+  hints: string[];
 }
 /** The credential type — a bearer token string or undefined. */
 type AStudioCredential = string | undefined;
@@ -108,6 +140,8 @@ declare function readTokenFromConfig(configPath: string): AStudioCredential;
  */
 declare function createAStudioAuth(options?: AStudioAuthOptions): AStudioCredentialStore & {
   invalidate: () => void;
+  status: () => Promise<AStudioAuthStatus>;
+  logout: () => Promise<void>;
 };
 //#endregion
 //#region src/shim.d.ts
