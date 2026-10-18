@@ -113,7 +113,7 @@ describe('createAStudioCatalog', () => {
       catalogs: {
         'astudio-local': {
           fetchedAtMs: Date.now(),
-          models: [{ id: 'saved-model', name: 'Saved Model', reasoning: false, contextWindow: 131072, maxTokens: 8192 }],
+          models: [{ id: 'saved-model', name: 'Saved Model', supportsImages: false, reasoning: { supports: false }, contextWindow: 131072, maxTokens: 8192 }],
         },
       },
     }), 'utf8')

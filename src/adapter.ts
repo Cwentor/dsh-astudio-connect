@@ -12,7 +12,7 @@ import { resolveRetryPolicy } from '@deepseek-ai/dsh-llm'
 import type { LlmModelInfo, LlmResolvedModelInfo } from '@deepseek-ai/dsh-llm'
 import { PiAiAdapter } from '@deepseek-ai/dsh-llm-pi-ai'
 import type { PiAiAdapterOptions, ResolvedPiAiProviderProfile } from '@deepseek-ai/dsh-llm-pi-ai'
-import type { AStudioCatalog } from './catalog.ts'
+import type { AStudioCatalog, AStudioModelInfo } from './catalog.ts'
 import type { AStudioShim } from './shim.ts'
 
 /** Provider route this bundle owns. */
@@ -65,29 +65,32 @@ export interface AStudioAdapter {
  * Build the thinking-level map for a reasoning model.
  * maas-api reasoning models support low/high/max.
  */
-function reasoningFields(info: { reasoning: boolean }): { reasoning: boolean; thinkingLevelMap?: ThinkingLevelMap } {
-  if (!info.reasoning) return { reasoning: false }
+export function reasoningFields(info: AStudioModelInfo): { reasoning: boolean; thinkingLevelMap?: ThinkingLevelMap } {
+  const reasoning = info.reasoning
+  if (reasoning === undefined || reasoning.supports !== true) return { reasoning: false }
+  const efforts = reasoning.supportedEfforts
+  if (efforts === undefined || efforts.length === 0) return { reasoning: false }
   const map: Record<ModelThinkingLevel, string | null> = {
-    off: null, // maas-api reasoning models cannot disable thinking
+    off: efforts.includes('off') && reasoning.canDisableThinking === true ? 'off' : null,
     minimal: null,
-    low: 'low',
-    medium: null,
-    high: 'high',
-    xhigh: null,
-    max: 'max',
+    low: efforts.includes('low') ? 'low' : null,
+    medium: efforts.includes('medium') ? 'medium' : null,
+    high: efforts.includes('high') ? 'high' : null,
+    xhigh: efforts.includes('xhigh') ? 'xhigh' : null,
+    max: efforts.includes('max') ? 'max' : null,
   }
   return { reasoning: true, thinkingLevelMap: map as ThinkingLevelMap }
 }
 
 /** Build one pi-ai model descriptor pointing at the loopback shim. */
-function toPiModel(info: { id: string; name: string; reasoning: boolean; contextWindow: number; maxTokens: number }, baseUrl: string, providerId: string): Model<Api> {
+export function toPiModel(info: AStudioModelInfo, baseUrl: string, providerId: string): Model<Api> {
   return {
     id: info.id,
     name: info.name,
     api: 'openai-completions',
     provider: providerId,
     baseUrl,
-    input: ['text'],
+    input: info.supportsImages === true ? ['text', 'image'] : ['text'],
     ...reasoningFields(info),
     cost: NO_COST,
     contextWindow: info.contextWindow,

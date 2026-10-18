@@ -14,7 +14,12 @@ import type { AStudioVisibilityStore } from './visibility-store.ts'
 export interface AStudioModelInfo {
   id: string
   name: string
-  reasoning: boolean
+  supportsImages?: boolean
+  reasoning?: {
+    supports?: boolean
+    supportedEfforts?: string[]
+    canDisableThinking?: boolean
+  }
   contextWindow: number
   maxTokens: number
 }
@@ -49,14 +54,14 @@ export interface AStudioCatalogOptions {
 
 /** Default built-in catalog — used when the upstream /v1/models is unavailable. */
 export const DEFAULT_CATALOG: readonly AStudioModelInfo[] = [
-  { id: 'spark-x2.5', name: 'Spark X2.5', reasoning: true, contextWindow: 131072, maxTokens: 8192 },
-  { id: 'spark-x2.5-4b', name: 'Spark X2.5 4B', reasoning: false, contextWindow: 131072, maxTokens: 8192 },
-  { id: 'spark-x2.6-preview', name: 'Spark X2.6 Preview', reasoning: true, contextWindow: 131072, maxTokens: 8192 },
-  { id: 'xopglm52', name: 'GLM-5.2', reasoning: false, contextWindow: 131072, maxTokens: 8192 },
-  { id: 'xopdeepseekv4pro', name: 'DeepSeek V4 Pro', reasoning: false, contextWindow: 131072, maxTokens: 8192 },
-  { id: 'xopdeepseekv4pro0813', name: 'DeepSeek V4 Pro 0813', reasoning: false, contextWindow: 131072, maxTokens: 8192 },
-  { id: 'xopdsv4flash0731in', name: 'DeepSeek V4 Flash', reasoning: false, contextWindow: 131072, maxTokens: 8192 },
-  { id: 'astronclaw-auto', name: 'AstronClaw Auto', reasoning: false, contextWindow: 131072, maxTokens: 8192 },
+  { id: 'spark-x2.5', name: 'Spark X2.5', supportsImages: false, reasoning: { supports: true, supportedEfforts: ['low', 'high', 'max'], canDisableThinking: false }, contextWindow: 131072, maxTokens: 8192 },
+  { id: 'spark-x2.5-4b', name: 'Spark X2.5 4B', supportsImages: false, reasoning: { supports: false }, contextWindow: 131072, maxTokens: 8192 },
+  { id: 'spark-x2.6-preview', name: 'Spark X2.6 Preview', supportsImages: false, reasoning: { supports: true, supportedEfforts: ['low', 'high', 'max'], canDisableThinking: false }, contextWindow: 131072, maxTokens: 8192 },
+  { id: 'xopglm52', name: 'GLM-5.2', supportsImages: false, reasoning: { supports: false }, contextWindow: 131072, maxTokens: 8192 },
+  { id: 'xopdeepseekv4pro', name: 'DeepSeek V4 Pro', supportsImages: false, reasoning: { supports: false }, contextWindow: 131072, maxTokens: 8192 },
+  { id: 'xopdeepseekv4pro0813', name: 'DeepSeek V4 Pro 0813', supportsImages: false, reasoning: { supports: false }, contextWindow: 131072, maxTokens: 8192 },
+  { id: 'xopdsv4flash0731in', name: 'DeepSeek V4 Flash', supportsImages: false, reasoning: { supports: false }, contextWindow: 131072, maxTokens: 8192 },
+  { id: 'astronclaw-auto', name: 'AstronClaw Auto', supportsImages: false, reasoning: { supports: false }, contextWindow: 131072, maxTokens: 8192 },
 ]
 
 /**
@@ -100,7 +105,8 @@ export function createAStudioCatalog(options: AStudioCatalogOptions): AStudioCat
               fetched = [...fetched, {
                 id: up.id,
                 name: up.id,
-                reasoning: false,
+                supportsImages: false,
+                reasoning: { supports: false },
                 contextWindow: 131072,
                 maxTokens: 8192,
               }]
