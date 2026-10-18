@@ -27,7 +27,10 @@ const CLIENT_EXTERNALS = ['react', 'react/jsx-runtime'] as const
 
 export default [
   {
-    entry: { index: 'src/index.ts' },
+    entry: {
+      index: 'src/index.ts',
+      bin: 'src/bin.ts',
+    },
     outDir: 'lib',
     format: ['esm'],
     platform: 'node',
