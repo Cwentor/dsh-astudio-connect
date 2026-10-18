@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { createAStudioAdapter, ASTRO_PROVIDER } from '../src/adapter.ts'
+import { createAStudioAdapter, ASTRO_PROVIDER, reasoningFields, toPiModel } from '../src/adapter.ts'
 import { DEFAULT_CATALOG } from '../src/catalog.ts'
 import type { AStudioShim } from '../src/shim.ts'
 import type { AStudioCatalog } from '../src/catalog.ts'
@@ -60,5 +60,36 @@ describe('createAStudioAdapter', () => {
     const { invalidate } = createAStudioAdapter({ shim: mockShim, catalog: mockCatalog })
     expect(invalidate).toBeDefined()
     invalidate() // Should not throw
+  })
+})
+
+describe('adapter model metadata', () => {
+  it('maps declared reasoning efforts', () => {
+    const info = {
+      id: 'img-model',
+      name: 'Img Model',
+      supportsImages: true,
+      reasoning: { supports: true, supportedEfforts: ['low', 'high', 'max'], canDisableThinking: false },
+      contextWindow: 1000,
+      maxTokens: 100,
+    }
+    const { reasoning, thinkingLevelMap } = reasoningFields(info)
+    expect(reasoning).toBe(true)
+    expect(thinkingLevelMap?.low).toBe('low')
+    expect(thinkingLevelMap?.high).toBe('high')
+    expect(thinkingLevelMap?.max).toBe('max')
+    expect(thinkingLevelMap?.off).toBeNull()
+  })
+
+  it('does not offer reasoning control for undeclared or unsupported models', () => {
+    expect(reasoningFields({ id: 'x', name: 'X', supportsImages: false, reasoning: { supports: false }, contextWindow: 1, maxTokens: 1 }).reasoning).toBe(false)
+    expect(reasoningFields({ id: 'y', name: 'Y', supportsImages: false, reasoning: { supports: true }, contextWindow: 1, maxTokens: 1 }).reasoning).toBe(false)
+  })
+
+  it('sets image input only when the catalog declares supportsImages', () => {
+    const image = toPiModel({ id: 'img', name: 'Img', supportsImages: true, contextWindow: 1000, maxTokens: 100 }, 'http://127.0.0.1:1/v1', 'astudio')
+    const text = toPiModel({ id: 'txt', name: 'Txt', supportsImages: false, contextWindow: 1000, maxTokens: 100 }, 'http://127.0.0.1:1/v1', 'astudio')
+    expect(image.input).toEqual(['text', 'image'])
+    expect(text.input).toEqual(['text'])
   })
 })
