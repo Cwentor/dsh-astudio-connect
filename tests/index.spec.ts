@@ -17,6 +17,9 @@ function createMockContext(): Context {
     llm: {
       registerAdapter: () => () => {},
     },
+    inject: (_deps: string[], _fn: () => void) => {
+      // Settings injection is a no-op in tests
+    },
     effect: (fn: () => () => void) => {
       disposers.push(fn())
     },

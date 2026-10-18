@@ -73,6 +73,15 @@ export function apply(ctx: Context, config: Config): void {
     },
   })
 
+  // Register the settings page policy so the DSH settings Plugins tab renders
+  // this plugin's card. The Config schema drives the form fields.
+  ctx.inject(['settings'], settingsCtx => {
+    ctx.effect(() => {
+      const disposer = settingsCtx.settings.configure({ auto: true })
+      return () => disposer()
+    })
+  })
+
   // Start the shim and register the adapter once it's listening.
   void shim.ready.then(() => {
     const { adapter } = createAStudioAdapter({
