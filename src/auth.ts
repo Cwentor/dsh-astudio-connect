@@ -20,6 +20,14 @@ export interface AStudioCredentialStore {
   resolve(): AStudioCredential
 }
 
+/** Secret-free sign-in summary for status and doctor output. */
+export interface AStudioAuthStatus {
+  state: 'signed-in' | 'signed-out'
+  configPath: string
+  tokenLength?: number
+  hints: string[]
+}
+
 /** The credential type — a bearer token string or undefined. */
 export type AStudioCredential = string | undefined
 
@@ -56,17 +64,42 @@ export function readTokenFromConfig(configPath: string): AStudioCredential {
  */
 export function createAStudioAuth(options: AStudioAuthOptions = {}): AStudioCredentialStore & {
   invalidate: () => void
+  status: () => Promise<AStudioAuthStatus>
+  logout: () => Promise<void>
 } {
   const configPath = options.configPath ?? DEFAULT_CONFIG_PATH
   let cached: AStudioCredential | null = null
 
+  const current = (): AStudioCredential => {
+    if (cached !== null) return cached
+    cached = readTokenFromConfig(configPath)
+    return cached
+  }
+
   return {
     resolve(): AStudioCredential {
-      if (cached !== null) return cached
-      cached = readTokenFromConfig(configPath)
-      return cached
+      return current()
     },
     invalidate(): void {
+      cached = null
+    },
+    async status(): Promise<AStudioAuthStatus> {
+      const token = current()
+      if (token === undefined) {
+        return {
+          state: 'signed-out',
+          configPath,
+          hints: ['AStudio config.toml was not found or has no experimental_bearer_token. Open AStudio and sign in.'],
+        }
+      }
+      return {
+        state: 'signed-in',
+        configPath,
+        tokenLength: token.length,
+        hints: [],
+      }
+    },
+    async logout(): Promise<void> {
       cached = null
     },
   }
