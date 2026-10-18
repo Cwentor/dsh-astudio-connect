@@ -1,7 +1,8 @@
 /**
- * Same-origin status route for the AStudio plugin card: connection state and
- * model count, fetched by the browser half. The route answers loopback
- * browser requests only and never carries token material.
+ * Same-origin status route for the AStudio plugin card: connection state,
+ * catalog provenance, hidden-model state, and probe summary, fetched by the
+ * browser half. The route answers loopback browser requests only and never
+ * carries token material.
  *
  * @module dsh-astudio-connect/web-status
  */
@@ -9,38 +10,97 @@
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import type { Context } from '@deepseek-ai/cordis'
 import type {} from '@deepseek-ai/dsh-host-webserver'
-import type { AStudioCredentialStore } from './auth.ts'
+import type { AStudioAuthStatus, AStudioCredentialStore } from './auth.ts'
 import type { AStudioCatalog } from './catalog.ts'
+import type { AStudioProbeRecord, AStudioProbeStore } from './probe-store.ts'
+import { ASTRO_LOCAL_IDENTITY } from './identity.ts'
 
 /** Status route path. */
 export const ASTRO_STATUS_PATH = '/astudio/status'
 
+/** Status store surface — the credential store plus the sign-in summary. */
+export interface AStudioStatusStore extends AStudioCredentialStore {
+  status(): Promise<AStudioAuthStatus>
+}
+
 /** Options for the status route. */
 export interface AStudioStatusRouteOptions {
-  store: AStudioCredentialStore
+  store: AStudioStatusStore
   catalog: AStudioCatalog
+  /** Probe store used to assemble the current identity's probe summary. */
+  probe?: AStudioProbeStore
+  /** Identity used for the probe summary. Defaults to the local identity. */
+  identity?: string
+}
+
+/** Sign-in section of the status document. */
+export interface AStudioWebAuth {
+  state: 'signed-in' | 'signed-out'
+  tokenLength?: number
+}
+
+/** Catalog provenance section of the status document. */
+export interface AStudioWebCatalog {
+  source: 'live' | 'saved' | 'fallback'
+  modelCount: number
+  models: Array<{ id: string; name: string }>
+}
+
+/** Visibility section of the status document. */
+export interface AStudioWebVisibility {
+  hidden: string[]
+}
+
+/** Probe summary section of the status document. */
+export interface AStudioWebProbe {
+  account: string
+  results: Array<{
+    modelId: string
+    validation: 'validating' | 'non-validating'
+    efforts: string[]
+    expiresAtMs: number
+  }>
 }
 
 /** What the status route serves. */
 export interface AStudioWebStatus {
-  connected: boolean
-  modelCount: number
-  models: Array<{ id: string; name: string }>
+  auth: AStudioWebAuth
+  catalog: AStudioWebCatalog
+  visibility: AStudioWebVisibility
+  probe: AStudioWebProbe
+}
+
+/** Assemble the probe summary for one identity from the live catalog. */
+function buildProbe(catalog: AStudioCatalog, probe: AStudioProbeStore, identity: string): AStudioWebProbe {
+  const results: AStudioWebProbe['results'] = []
+  for (const model of catalog.current()) {
+    const record: AStudioProbeRecord | undefined = probe.get(identity, model.id)
+    if (record === undefined) continue
+    results.push({
+      modelId: record.modelId,
+      validation: record.validation,
+      efforts: [...record.efforts],
+      expiresAtMs: record.expiresAtMs,
+    })
+  }
+  return { account: identity, results }
 }
 
 /**
  * Mount the GET status route on the host web server.
  *
- * The route serves a JSON document with connection state and model list.
- * It checks the loopback Host header before answering.
+ * The route serves a JSON document with connection state, catalog provenance,
+ * hidden models, and probe observations. It checks the loopback Host header
+ * before answering.
  */
 export function registerAStudioStatusRoute(ctx: Context, options: AStudioStatusRouteOptions): void {
   const { store, catalog } = options
+  const identity = options.identity ?? ASTRO_LOCAL_IDENTITY
 
   ctx.webServer.register({
     kind: 'exact',
     path: ASTRO_STATUS_PATH,
-    handler: (req: IncomingMessage, res: ServerResponse) => {
+    handler: async (req: IncomingMessage, res: ServerResponse) => {
       // Loopback check
       const host = req.headers.host ?? ''
       const hostName = host.split(':')[0]?.toLowerCase() ?? ''
@@ -50,14 +110,26 @@ export function registerAStudioStatusRoute(ctx: Context, options: AStudioStatusR
         return
       }
 
-      const token = store.resolve()
-      const connected = token !== undefined
+      const authStatus = await store.status()
       const models = catalog.current()
+      const probe: AStudioWebProbe = options.probe === undefined
+        ? { account: identity, results: [] }
+        : buildProbe(catalog, options.probe, identity)
 
       const body: AStudioWebStatus = {
-        connected,
-        modelCount: models.length,
-        models: models.map(m => ({ id: m.id, name: m.name })),
+        auth: {
+          state: authStatus.state,
+          ...(authStatus.tokenLength !== undefined ? { tokenLength: authStatus.tokenLength } : {}),
+        },
+        catalog: {
+          source: catalog.source(),
+          modelCount: models.length,
+          models: models.map(m => ({ id: m.id, name: m.name })),
+        },
+        visibility: {
+          hidden: [...catalog.hiddenModelIds()],
+        },
+        probe,
       }
 
       res.writeHead(200, { 'Content-Type': 'application/json' })
