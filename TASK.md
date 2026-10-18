@@ -157,7 +157,7 @@ dsh-astudio-connect 插件的微任务拆解。每个任务独立交付，配套
 |------|------|--------|
 | T001 | done | T001: scaffold |
 | T010 | done | T010: auth |
-| T011 | pending | — |
+| T011 | done | T011: upstream |
 | T012 | pending | — |
 | T013 | pending | — |
 | T020 | pending | — |
