@@ -16,6 +16,7 @@ import { createAStudioShim } from './shim.ts'
 import { createAStudioAdapter, ASTRO_PROVIDER } from './adapter.ts'
 import { registerAStudioStatusRoute } from './web-status.ts'
 import { createAStudioVisibilityStore } from './visibility-store.ts'
+import { writeHostHeartbeat, clearHostHeartbeat } from './host-heartbeat.ts'
 
 export { ASTRO_PROVIDER, ASTRO_STREAM_IDLE_TIMEOUT_MS, createAStudioAdapter } from './adapter.ts'
 export { createAStudioShim, type AStudioShim } from './shim.ts'
@@ -100,14 +101,21 @@ export function apply(ctx: Context, config: Config): void {
       ctx.effect(() => () => {
         releaseAdapter()
         void shim.close()
+        void clearHostHeartbeat()
       })
     } catch {
       releaseAdapter()
       void shim.close()
+      void clearHostHeartbeat()
     }
 
     // Register the status route on the host web server.
     registerAStudioStatusRoute(ctx, { store, catalog })
+
+    // The host bundle is live: write a heartbeat so the status CLI can report
+    // host health without a browser. Cleared on disposal; a stale heartbeat after
+    // a crash is detected by PID in the reader.
+    void writeHostHeartbeat()
 
     ctx.logger.info('dsh-astudio-connect: shim listening at', shim.baseUrl())
     void catalog.refresh().catch(() => {})
