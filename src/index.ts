@@ -14,6 +14,7 @@ import { createAStudioUpstream } from './upstream.ts'
 import { createAStudioCatalog } from './catalog.ts'
 import { createAStudioShim } from './shim.ts'
 import { createAStudioAdapter, ASTRO_PROVIDER } from './adapter.ts'
+import { registerAStudioStatusRoute } from './web-status.ts'
 
 export { ASTRO_PROVIDER, ASTRO_STREAM_IDLE_TIMEOUT_MS, createAStudioAdapter } from './adapter.ts'
 export { createAStudioShim, type AStudioShim } from './shim.ts'
@@ -101,6 +102,9 @@ export function apply(ctx: Context, config: Config): void {
       releaseAdapter()
       void shim.close()
     }
+
+    // Register the status route on the host web server.
+    registerAStudioStatusRoute(ctx, { store, catalog })
 
     ctx.logger.info('dsh-astudio-connect: shim listening at', shim.baseUrl())
     void catalog.refresh().catch(() => {})
