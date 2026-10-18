@@ -168,5 +168,5 @@ dsh-astudio-connect 插件的微任务拆解。每个任务独立交付，配套
 | T060 | done | T060: settings-inject |
 | T070 | done | T070: web-status |
 | T080 | done | T080: adapter-wrap |
-| T090 | pending | — |
+| T090 | done | T090: cordis-patch |
 | T100 | pending | — |
