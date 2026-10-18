@@ -171,12 +171,15 @@ export function createAStudioShim(options: AStudioShimOptions): AStudioShim {
         return
       }
       if (req.method === 'GET' && (url === '/v1/models' || url === '/v1/models/')) {
-        const models = catalog.current().map((m: AStudioModelInfo) => ({
-          id: m.id,
-          object: 'model',
-          created: 0,
-          owned_by: 'astudio',
-        }))
+        const hidden = catalog.hiddenModelIds()
+        const models = catalog.current()
+          .filter(m => !hidden.includes(m.id))
+          .map((m: AStudioModelInfo) => ({
+            id: m.id,
+            object: 'model',
+            created: 0,
+            owned_by: 'astudio',
+          }))
         writeJson(res, 200, { object: 'list', data: models })
         return
       }

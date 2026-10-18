@@ -8,6 +8,7 @@
 import type { AStudioUpstreamClient } from './upstream.ts'
 import { ASTRO_LOCAL_IDENTITY } from './identity.ts'
 import { astudioCatalogPath, writeCatalogSnapshot, readCatalogSnapshot } from './catalog-store.ts'
+import type { AStudioVisibilityStore } from './visibility-store.ts'
 
 /** Info for a single model. */
 export interface AStudioModelInfo {
@@ -28,6 +29,8 @@ export interface AStudioCatalog {
   source(): 'live' | 'saved' | 'fallback'
   /** When the current models were fetched, for live and saved sources. */
   fetchedAtMs(): number | undefined
+  /** Model ids hidden by the current identity. */
+  hiddenModelIds(): readonly string[]
 }
 
 /** Options for creating a catalog. */
@@ -40,6 +43,8 @@ export interface AStudioCatalogOptions {
   identity?: string
   /** Override the catalog snapshot path. */
   catalogPath?: string
+  /** Visibility store used to report hidden model ids. */
+  visibility?: AStudioVisibilityStore
 }
 
 /** Default built-in catalog — used when the upstream /v1/models is unavailable. */
@@ -65,6 +70,7 @@ export function createAStudioCatalog(options: AStudioCatalogOptions): AStudioCat
   const baseUrl = options.baseUrl ?? 'https://maas-api.cn-huabei-1.xf-yun.com/v1'
   const identity = options.identity ?? ASTRO_LOCAL_IDENTITY
   const catalogPath = options.catalogPath ?? astudioCatalogPath()
+  const visibility = options.visibility
 
   async function loadSaved(): Promise<void> {
     const snapshot = await readCatalogSnapshot(catalogPath, identity)
@@ -124,5 +130,6 @@ export function createAStudioCatalog(options: AStudioCatalogOptions): AStudioCat
     refresh,
     source: () => source,
     fetchedAtMs: () => fetchedAtMs,
+    hiddenModelIds: () => visibility === undefined ? [] : [...(visibility.hidden(identity) ?? [])],
   }
 }

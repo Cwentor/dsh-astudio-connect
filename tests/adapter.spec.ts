@@ -18,6 +18,7 @@ const mockCatalog: AStudioCatalog = {
   refresh: async () => {},
   source: () => 'fallback',
   fetchedAtMs: () => undefined,
+  hiddenModelIds: () => [],
 }
 
 describe('createAStudioAdapter', () => {
