@@ -144,7 +144,7 @@ export function createAStudioAdapter(options: AStudioAdapterOptions): AStudioAda
 
   let profiles = new Map<string, ResolvedPiAiProviderProfile>([[providerId, profile]])
 
-  const adapter = new PiAiAdapter({
+  const adapter = new AStudioPiAiAdapter(catalog, {
     profiles: () => profiles,
     auth: INERT_AUTH,
     resolveApiKey: async () => shim.token(),
