@@ -1,0 +1,6 @@
+# Register the AStudio provider without changing the profile's current
+# default model. The plugin reuses the AStudio app's sign-in; no
+# separate OAuth flow is started.
+- insert:
+    - id: llm-astudio
+      name: dsh-astudio-connect
