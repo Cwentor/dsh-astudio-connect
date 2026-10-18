@@ -30,62 +30,73 @@ describe('desensitizeToken', () => {
   })
 })
 
-function renderPage(store: ReturnType<typeof createAStudioAuth>, catalog: ReturnType<typeof createAStudioCatalog>) {
+function renderPage(
+  store: ReturnType<typeof createAStudioAuth>,
+  catalog: ReturnType<typeof createAStudioCatalog>,
+) {
   let renderer: ReturnType<typeof create> | null = null
   act(() => {
-    renderer = create(<AStudioSettingsPage store={store} catalog={catalog} />)
+    renderer = create(
+      <AStudioSettingsPage store={store} catalog={catalog} />,
+    )
   })
   const json = renderer!.toJSON()
   return JSON.stringify(json)
 }
 
+function testCatalog(store: ReturnType<typeof createAStudioAuth>) {
+  return createAStudioCatalog({
+    upstream: { chat: async () => { throw new Error('not used') } },
+    token: () => store.resolve(),
+  })
+}
+
 describe('AStudioSettingsPage', () => {
-  it('renders connected status with token', () => {
+  it('renders connected sign-in state and catalog source', () => {
     const testFile = join(tmpdir(), `astudio-client-test-${Date.now()}.toml`)
     writeFileSync(testFile, `experimental_bearer_token = "16c814c_test_token"`, 'utf8')
 
     const store = createAStudioAuth({ configPath: testFile })
-    const catalog = createAStudioCatalog({
-      upstream: { chat: async () => { throw new Error('not used') } },
-      token: () => store.resolve(),
-    })
-
-    const html = renderPage(store, catalog)
+    const html = renderPage(store, testCatalog(store))
 
     expect(html).toContain('Connected')
-    expect(html).toContain('16c814c…')
-    expect(html).toContain('Models')
-    expect(html).toContain(DEFAULT_CATALOG[0]?.name ?? '')
+    expect(html).toContain('Catalog source')
+    expect(html).toContain('Token expiry')
 
     if (existsSync(testFile)) unlinkSync(testFile)
   })
 
-  it('renders not-connected status without token', () => {
+  it('renders not-connected sign-in state', () => {
     const store = createAStudioAuth({ configPath: '/nonexistent' })
-    const catalog = createAStudioCatalog({
-      upstream: { chat: async () => { throw new Error('not used') } },
-      token: () => store.resolve(),
-    })
-
-    const html = renderPage(store, catalog)
+    const html = renderPage(store, testCatalog(store))
 
     expect(html).toContain('Not connected')
-    expect(html).toContain('—')
-    expect(html).toContain('Models')
   })
 
-  it('renders model list', () => {
+  it('renders the context window and image capability per model', () => {
     const store = createAStudioAuth({ configPath: '/nonexistent' })
-    const catalog = createAStudioCatalog({
-      upstream: { chat: async () => { throw new Error('not used') } },
-      token: () => store.resolve(),
-    })
+    const html = renderPage(store, testCatalog(store))
 
-    const html = renderPage(store, catalog)
-
-    // All default models should appear
     for (const model of DEFAULT_CATALOG) {
       expect(html).toContain(model.name)
+      expect(html).toContain(String(model.contextWindow))
+      expect(html).toContain(model.supportsImages === true ? 'supported' : 'not supported')
     }
+  })
+
+  it('renders the rate placeholder and probe summary', () => {
+    const store = createAStudioAuth({ configPath: '/nonexistent' })
+    const html = renderPage(store, testCatalog(store))
+
+    expect(html).toContain('Rate')
+    expect(html).toContain('Unknown')
+  })
+
+  it('renders refresh and probe controls', () => {
+    const store = createAStudioAuth({ configPath: '/nonexistent' })
+    const html = renderPage(store, testCatalog(store))
+
+    expect(html).toContain('Refresh catalog')
+    expect(html).toContain('Probe')
   })
 })
