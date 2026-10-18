@@ -1,18 +1,30 @@
 /**
- * AStudio settings page. Shows connection status, desensitized token info,
- * and the model list. Rendered into the DSH plugin settings slot.
+ * AStudio settings page. Renders the plugin card into the DSH settings slot with
+ * three labeled sections — status, context, and detail — plus manual refresh,
+ * probe, and visibility controls.
  *
  * @module dsh-astudio-connect/client
  */
 
 import { useState, useEffect } from 'react'
-import type { AStudioCatalog } from '../catalog.ts'
+import type { AStudioCatalog, AStudioModelInfo } from '../catalog.ts'
 import type { AStudioCredentialStore } from '../auth.ts'
+import type { AStudioVisibilityStore } from '../visibility-store.ts'
+import type { AStudioProbeStore } from '../probe-store.ts'
+import { ASTRO_LOCAL_IDENTITY } from '../identity.ts'
 
 /** Props for the settings page. */
 export interface AStudioSettingsPageProps {
   store: AStudioCredentialStore
   catalog: AStudioCatalog
+  /** Visibility store used to render and toggle per-model visibility. */
+  visibility?: AStudioVisibilityStore
+  /** Probe store used to render the current identity's probe summary. */
+  probe?: AStudioProbeStore
+  /** Identity used for visibility and probe reads. */
+  identity?: string
+  /** Fired when the user asks to probe one model; the host owns the request. */
+  onProbe?: (modelId: string) => void
 }
 
 /** Connection status. */
@@ -28,57 +40,140 @@ export function desensitizeToken(token: string | undefined): string {
   return `${token.slice(0, 7)}… (len=${token.length})`
 }
 
-/**
- * AStudio settings page component.
- *
- * Shows:
- * - Connection status (connected / not connected)
- * - Desensitized token info
- * - Model list from the catalog
- */
-export default function AStudioSettingsPage({ store, catalog }: AStudioSettingsPageProps) {
+/** AStudio settings page component. */
+export default function AStudioSettingsPage({
+  store,
+  catalog,
+  visibility,
+  probe,
+  identity = ASTRO_LOCAL_IDENTITY,
+  onProbe,
+}: AStudioSettingsPageProps) {
   const [status, setStatus] = useState<Status>('not-connected')
-  const [tokenInfo, setTokenInfo] = useState<string>('—')
-  const [models, setModels] = useState<readonly { id: string; name: string }[]>([])
+  const [models, setModels] = useState<readonly AStudioModelInfo[]>([])
+  const [refreshing, setRefreshing] = useState(false)
 
   useEffect(() => {
     const token = store.resolve()
-    if (token !== undefined) {
-      setStatus('connected')
-      setTokenInfo(desensitizeToken(token))
-    } else {
-      setStatus('not-connected')
-      setTokenInfo('—')
-    }
+    setStatus(token !== undefined ? 'connected' : 'not-connected')
     setModels(catalog.current())
   }, [store, catalog])
+
+  async function refreshCatalog(): Promise<void> {
+    setRefreshing(true)
+    try {
+      await catalog.refresh()
+      setModels(catalog.current())
+    } finally {
+      setRefreshing(false)
+    }
+  }
+
+  const hidden = visibility === undefined ? [] : visibility.hidden(identity)
+  const probeRecords = (probe === undefined ? [] : catalog.current())
+    .map(model => probe === undefined ? undefined : probe.get(identity, model.id))
+    .filter((record): record is NonNullable<typeof record> => record !== undefined)
 
   return (
     <div style={{ padding: '16px', fontFamily: 'system-ui, sans-serif' }}>
       <h3 style={{ marginBottom: '12px' }}>AStudio Connect</h3>
 
-      <div style={{ marginBottom: '12px' }}>
-        <span style={{ fontWeight: 'bold' }}>Status: </span>
-        <span style={{ color: status === 'connected' ? 'green' : 'red' }}>
-          {status === 'connected' ? 'Connected' : 'Not connected'}
-        </span>
-      </div>
+      <section style={{ marginBottom: '12px' }} data-testid="status">
+        <h4 style={{ marginBottom: '8px' }}>Status</h4>
+        <div style={{ marginBottom: '4px' }}>
+          <span style={{ fontWeight: 'bold' }}>Sign-in: </span>
+          <span style={{ color: status === 'connected' ? 'green' : 'red' }}>
+            {status === 'connected' ? 'Connected' : 'Not connected'}
+          </span>
+        </div>
+        <div style={{ marginBottom: '4px' }}>
+          <span style={{ fontWeight: 'bold' }}>Catalog source: </span>
+          <span>{catalog.source()}</span>
+        </div>
+        <div>
+          <span style={{ fontWeight: 'bold' }}>Token expiry: </span>
+          <span>Unknown</span>
+        </div>
+      </section>
 
-      <div style={{ marginBottom: '12px' }}>
-        <span style={{ fontWeight: 'bold' }}>Token: </span>
-        <code>{tokenInfo}</code>
-      </div>
-
-      <div>
-        <span style={{ fontWeight: 'bold' }}>Models ({models.length}):</span>
-        <ul style={{ marginTop: '8px' }}>
+      <section style={{ marginBottom: '12px' }} data-testid="context">
+        <h4 style={{ marginBottom: '8px' }}>Context</h4>
+        <ul>
           {models.map(model => (
             <li key={model.id} style={{ marginBottom: '4px' }}>
-              {model.name} <code>({model.id})</code>
+              <span>{model.name}: {model.contextWindow} tokens, image {model.supportsImages === true ? 'supported' : 'not supported'}</span>
             </li>
           ))}
         </ul>
+      </section>
+
+      <section style={{ marginBottom: '12px' }} data-testid="detail">
+        <h4 style={{ marginBottom: '8px' }}>Detail</h4>
+        <div style={{ marginBottom: '8px' }}>
+          <span style={{ fontWeight: 'bold' }}>Rate: </span>
+          <span>Unknown</span>
+        </div>
+        <ul>
+          {models.map(model => {
+            const record = probeRecords.find(r => r.modelId === model.id)
+            return (
+              <li key={model.id} style={{ marginBottom: '4px' }}>
+                <span>{model.name} <code>({model.id})</code></span>
+                {record !== undefined && (
+                  <span style={{ marginLeft: '8px' }}>
+                    probe: {record.validation} [{record.efforts.join(', ')}]
+                  </span>
+                )}
+              </li>
+            )
+          })}
+        </ul>
+      </section>
+
+      <div style={{ marginBottom: '12px' }}>
+        <button type="button" onClick={() => void refreshCatalog()} disabled={refreshing}>
+          {refreshing ? 'Refreshing…' : 'Refresh catalog'}
+        </button>
       </div>
+
+      <div style={{ marginBottom: '12px' }}>
+        <span style={{ fontWeight: 'bold' }}>Probe:</span>
+        {models
+          .filter(model => model.reasoning?.supports === true)
+          .map(model => (
+            <button
+              type="button"
+              key={model.id}
+              style={{ marginLeft: '8px' }}
+              onClick={() => onProbe?.(model.id)}
+            >
+              {model.name}
+            </button>
+          ))}
+      </div>
+
+      {visibility !== undefined && (
+        <div>
+          <span style={{ fontWeight: 'bold' }}>Visibility:</span>
+          <ul>
+            {models.map(model => {
+              const isHidden = hidden.includes(model.id)
+              return (
+                <li key={model.id}>
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      await visibility.setVisible(identity, model.id, !isHidden)
+                    }}
+                  >
+                    {isHidden ? 'Show' : 'Hide'} {model.name}
+                  </button>
+                </li>
+              )
+            })}
+          </ul>
+        </div>
+      )}
     </div>
   )
 }
