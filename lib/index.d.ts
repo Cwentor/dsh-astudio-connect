@@ -1,0 +1,197 @@
+import z from "@deepseek-ai/schemastery";
+import "@deepseek-ai/dsh-llm";
+import { PiAiAdapter } from "@deepseek-ai/dsh-llm-pi-ai";
+import { Context } from "@deepseek-ai/cordis";
+import { SettingsNamespace } from "@deepseek-ai/dsh-settings";
+//#region src/upstream.d.ts
+/**
+ * AStudio maas-api upstream client. Sends standard OpenAI chat/completions
+ * requests to maas-api and returns a structured result. No protocol
+ * transformation — maas-api speaks standard OpenAI.
+ *
+ * @module dsh-astudio-connect/upstream
+ */
+/** Classification of an upstream failure. */
+type UpstreamErrorKind = 'auth' | 'not_found' | 'rate' | 'server' | 'client';
+/** Result of an upstream request. */
+interface AStudioUpstreamResult {
+  /** True when the upstream returned 2xx. */
+  ok: boolean;
+  /** HTTP status code. */
+  status: number;
+  /** Error classification, or 'ok' on success. */
+  kind: UpstreamErrorKind | 'ok';
+  /** Human-readable error message. */
+  message: string;
+  /** Raw fetch Response — caller reads .text() (non-stream) or pipes .body (stream). */
+  response: Response;
+}
+/** Default maas-api endpoint. */
+declare const DEFAULT_UPSTREAM_URL = "https://maas-api.cn-huabei-1.xf-yun.com/v1";
+/** Options for the upstream client. */
+interface AStudioUpstreamOptions {
+  /** Override the base URL (used by tests). */
+  baseUrl?: string;
+}
+/** The upstream client interface — exposes chat(). */
+interface AStudioUpstreamClient {
+  chat(token: string, body: unknown, signal?: AbortSignal): Promise<AStudioUpstreamResult>;
+}
+/**
+ * Send a chat completion request to maas-api.
+ *
+ * Returns a structured result regardless of HTTP status. On 2xx, `ok` is
+ * true and `kind` is 'ok'. On failure, `kind` classifies the error and
+ * `message` carries a short summary extracted from the response body.
+ */
+declare function createAStudioUpstream(options?: AStudioUpstreamOptions): {
+  chat: (token: string, body: unknown, signal?: AbortSignal) => Promise<AStudioUpstreamResult>;
+};
+//#endregion
+//#region src/catalog.d.ts
+/** Info for a single model. */
+interface AStudioModelInfo {
+  id: string;
+  name: string;
+  reasoning: boolean;
+  contextWindow: number;
+  maxTokens: number;
+}
+/** The catalog interface. */
+interface AStudioCatalog {
+  /** Get the current model list. */
+  current(): readonly AStudioModelInfo[];
+  /** Force a refresh from the upstream. */
+  refresh(): Promise<void>;
+}
+/** Options for creating a catalog. */
+interface AStudioCatalogOptions {
+  upstream: AStudioUpstreamClient;
+  token: () => string | undefined;
+  /** Override the base URL for /v1/models (used by tests). */
+  baseUrl?: string;
+}
+/** Default built-in catalog — used when the upstream /v1/models is unavailable. */
+declare const DEFAULT_CATALOG: readonly AStudioModelInfo[];
+/**
+ * Create a catalog backed by the upstream /v1/models endpoint.
+ * Falls back to DEFAULT_CATALOG when the refresh fails.
+ */
+declare function createAStudioCatalog(options: AStudioCatalogOptions): AStudioCatalog;
+//#endregion
+//#region src/auth.d.ts
+/** What the shim and upstream need from a credential. */
+interface AStudioCredentialStore {
+  /** Resolve the current bearer token, or undefined when unavailable. */
+  resolve(): AStudioCredential;
+}
+/** The credential type — a bearer token string or undefined. */
+type AStudioCredential = string | undefined;
+/** Options for constructing the store. */
+interface AStudioAuthOptions {
+  /** Override the config path (used by tests). */
+  configPath?: string;
+}
+/**
+ * Read the bearer token from config.toml.
+ *
+ * Returns undefined when the file is missing, the field is absent, or the
+ * format is unexpected. Never throws — a missing credential is a normal state
+ * the plugin surfaces as "not connected" in the UI.
+ */
+declare function readTokenFromConfig(configPath: string): AStudioCredential;
+/**
+ * Create a credential store that reads from config.toml and caches the result
+ * in memory. The cache is populated once on the first `resolve()` call;
+ * subsequent calls return the same value. Call `invalidate()` to force a re-read
+ * (e.g. after the user re-logs in).
+ */
+declare function createAStudioAuth(options?: AStudioAuthOptions): AStudioCredentialStore & {
+  invalidate: () => void;
+};
+//#endregion
+//#region src/shim.d.ts
+/** Minimal logger surface. */
+interface ShimLogger {
+  warn(...args: unknown[]): void;
+  error(...args: unknown[]): void;
+}
+/** What the plugin needs from a running shim. */
+interface AStudioShim {
+  /** Resolves once the listener is up; rejects if listening failed. */
+  ready: Promise<void>;
+  /** The shim origin, e.g. `http://127.0.0.1:39271`; valid after ready. */
+  baseUrl(): string;
+  /** The per-process shared secret the plugin's own client must carry. */
+  token(): string;
+  /** Stop serving and destroy open connections. */
+  close(): Promise<void>;
+}
+/** Constructor dependencies. */
+interface AStudioShimOptions {
+  store: AStudioCredentialStore;
+  upstream: AStudioUpstreamClient;
+  catalog: AStudioCatalog;
+  logger?: ShimLogger;
+}
+/**
+ * Start the loopback endpoint. Requests carry any bearer; the loopback bind
+ * is the boundary, and the upstream credential comes from the store alone.
+ */
+declare function createAStudioShim(options: AStudioShimOptions): AStudioShim;
+//#endregion
+//#region src/adapter.d.ts
+/** Provider route this bundle owns. */
+declare const ASTRO_PROVIDER = "astudio";
+/** Provider idle ceiling while one stream read is outstanding. */
+declare const ASTRO_STREAM_IDLE_TIMEOUT_MS = 300000;
+/** Constructor dependencies. */
+interface AStudioAdapterOptions {
+  providerId?: string;
+  displayName?: string;
+  shim: AStudioShim;
+  catalog: AStudioCatalog;
+}
+/** What {@link createAStudioAdapter} hands back. */
+interface AStudioAdapter {
+  adapter: PiAiAdapter;
+  invalidate: () => void;
+}
+/**
+ * Assemble the adapter. The provider's `getModels` reads the live catalog,
+ * and every model's `baseUrl` is re-resolved per read so the shim's
+ * ephemeral port applies from the first snapshot after startup.
+ */
+declare function createAStudioAdapter(options: AStudioAdapterOptions): AStudioAdapter;
+//#endregion
+//#region src/index.d.ts
+/** The model registry required before the provider can register. */
+declare const inject: string[];
+/**
+ * Settings namespace owning the AStudio card's section.
+ *
+ * A nominal string cast to the seam type. The namespace is what
+ * `settings.yaml` and the TUI `/settings` read, and on DSH 0.1.5 the
+ * settings Plugins tab dispatches a card by rendering `settings.plugin.item`
+ * with `entryKey = ns` for each namespace the host serves.
+ */
+declare const ASTRO_SETTINGS_NS: SettingsNamespace;
+/** Plugin configuration schema. */
+interface Config {
+  /** Display name shown in the provider picker. */
+  displayName?: string;
+  /** Explicit config path, overriding the AStudio default location. */
+  configPath?: string;
+}
+declare const Config: z<Config>;
+/**
+ * Register the AStudio provider into the Harness LLM seam.
+ *
+ * Creates the credential store, upstream client, catalog, loopback shim, and
+ * pi-ai adapter. The shim starts listening on 127.0.0.1 and the adapter
+ * registers the `astudio` provider route. All resources are cleaned up when
+ * the host calls `ctx.dispose()`.
+ */
+declare function apply(ctx: Context, config: Config): void;
+//#endregion
+export { ASTRO_PROVIDER, ASTRO_SETTINGS_NS, ASTRO_STREAM_IDLE_TIMEOUT_MS, type AStudioShim, Config, DEFAULT_CATALOG, DEFAULT_UPSTREAM_URL, apply, apply as default, createAStudioAdapter, createAStudioAuth, createAStudioCatalog, createAStudioShim, createAStudioUpstream, inject, readTokenFromConfig };
