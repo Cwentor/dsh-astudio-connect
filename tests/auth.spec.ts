@@ -95,3 +95,42 @@ describe('createAStudioAuth', () => {
     expect(store.resolve()).toBeUndefined() // re-reads, finds nothing
   })
 })
+
+describe('auth status and logout', () => {
+  let testFile: string
+
+  beforeEach(() => {
+    testFile = join(tmpdir(), `astudio-test-${Date.now()}.toml`)
+  })
+
+  afterEach(() => {
+    if (existsSync(testFile)) unlinkSync(testFile)
+  })
+
+  it('status reports signed-out with config path when no token is available', async () => {
+    const store = createAStudioAuth({ configPath: testFile })
+    const status = await store.status()
+    expect(status.state).toBe('signed-out')
+    expect(status.configPath).toBe(testFile)
+    expect(status.hints.length).toBeGreaterThan(0)
+  })
+
+  it('status reports signed-in without exposing token material', async () => {
+    writeFileSync(testFile, CONFIG_CONTENT, 'utf8')
+    const store = createAStudioAuth({ configPath: testFile })
+    const status = await store.status()
+    expect(status.state).toBe('signed-in')
+    expect(status.tokenLength).toBe(TOKEN_VALUE.length)
+    expect(JSON.stringify(status)).not.toContain(TOKEN_VALUE)
+  })
+
+  it('logout clears the in-memory cache and keeps the config file', async () => {
+    writeFileSync(testFile, CONFIG_CONTENT, 'utf8')
+    const store = createAStudioAuth({ configPath: testFile })
+    expect(store.resolve()).toBe(TOKEN_VALUE)
+    await store.logout()
+    writeFileSync(testFile, 'no token here', 'utf8')
+    expect(store.resolve()).toBeUndefined()
+    expect(existsSync(testFile)).toBe(true)
+  })
+})
