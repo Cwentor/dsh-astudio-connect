@@ -10,10 +10,10 @@ import type { IncomingMessage, ServerResponse } from 'node:http'
 import type { Context } from '@deepseek-ai/cordis'
 import type {} from '@deepseek-ai/dsh-host-webserver'
 import { hostIsLoopback, originIsLoopback } from './loopback.ts'
+import { ASTRO_UPDATE_PATH } from './status-paths.ts'
 import { checkAStudioUpdate, ASTRO_UPDATE_TIMEOUT_MS, type AStudioUpdateFetch, type AStudioUpdateResult } from './update.ts'
 
-/** Update route path. */
-export const ASTRO_UPDATE_PATH = '/astudio/update'
+export { ASTRO_UPDATE_PATH }
 
 /** Constructor dependencies. */
 export interface AStudioUpdateRouteOptions {

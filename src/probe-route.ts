@@ -21,9 +21,10 @@ import type { IncomingMessage, ServerResponse } from 'node:http'
 import type { Context } from '@deepseek-ai/cordis'
 import type {} from '@deepseek-ai/dsh-host-webserver'
 import type { AStudioProbeService } from './probe-service.ts'
+import { ASTRO_PROBE_PATH } from './status-paths.ts'
 
 /** Probe control route prefix; the model id is the trailing path segment. */
-export const ASTRO_PROBE_PATH = '/astudio/probe'
+export { ASTRO_PROBE_PATH }
 
 /** Header carrying the in-process probe key. */
 const PROBE_KEY_HEADER = 'x-astudio-probe-key'

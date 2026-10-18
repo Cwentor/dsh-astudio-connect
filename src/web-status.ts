@@ -14,9 +14,7 @@ import type { AStudioAuthStatus, AStudioCredentialStore } from './auth.ts'
 import type { AStudioCatalog } from './catalog.ts'
 import type { AStudioProbeRecord, AStudioProbeStore } from './probe-store.ts'
 import { ASTRO_LOCAL_IDENTITY } from './identity.ts'
-
-/** Status route path. */
-export const ASTRO_STATUS_PATH = '/astudio/status'
+import { ASTRO_STATUS_PATH, type AStudioWebProbe, type AStudioWebStatus } from './status-paths.ts'
 
 /** Status store surface — the credential store plus the sign-in summary. */
 export interface AStudioStatusStore extends AStudioCredentialStore {
@@ -31,43 +29,6 @@ export interface AStudioStatusRouteOptions {
   probe?: AStudioProbeStore
   /** Identity used for the probe summary. Defaults to the local identity. */
   identity?: string
-}
-
-/** Sign-in section of the status document. */
-export interface AStudioWebAuth {
-  state: 'signed-in' | 'signed-out'
-  tokenLength?: number
-}
-
-/** Catalog provenance section of the status document. */
-export interface AStudioWebCatalog {
-  source: 'live' | 'saved' | 'fallback'
-  modelCount: number
-  models: Array<{ id: string; name: string }>
-}
-
-/** Visibility section of the status document. */
-export interface AStudioWebVisibility {
-  hidden: string[]
-}
-
-/** Probe summary section of the status document. */
-export interface AStudioWebProbe {
-  account: string
-  results: Array<{
-    modelId: string
-    validation: 'validating' | 'non-validating'
-    efforts: string[]
-    expiresAtMs: number
-  }>
-}
-
-/** What the status route serves. */
-export interface AStudioWebStatus {
-  auth: AStudioWebAuth
-  catalog: AStudioWebCatalog
-  visibility: AStudioWebVisibility
-  probe: AStudioWebProbe
 }
 
 /** Assemble the probe summary for one identity from the live catalog. */
