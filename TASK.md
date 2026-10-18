@@ -159,7 +159,7 @@ dsh-astudio-connect 插件的微任务拆解。每个任务独立交付，配套
 | T010 | done | T010: auth |
 | T011 | done | T011: upstream |
 | T012 | done | T012: shim |
-| T013 | pending | — |
+| T013 | done | T013: catalog |
 | T020 | pending | — |
 | T030 | pending | — |
 | T031 | pending | — |
