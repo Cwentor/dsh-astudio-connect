@@ -163,4 +163,4 @@ dsh-astudio-connect 插件的微任务拆解。每个任务独立交付，配套
 | T020 | done | T020: adapter |
 | T030 | done | T030: index |
 | T031 | done | T031: client |
-| T040 | pending | — |
+| T040 | done | T040: integration |
