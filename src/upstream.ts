@@ -50,6 +50,11 @@ export interface AStudioUpstreamOptions {
   baseUrl?: string
 }
 
+/** The upstream client interface — exposes chat(). */
+export interface AStudioUpstreamClient {
+  chat(token: string, body: unknown, signal?: AbortSignal): Promise<AStudioUpstreamResult>
+}
+
 /**
  * Send a chat completion request to maas-api.
  *
