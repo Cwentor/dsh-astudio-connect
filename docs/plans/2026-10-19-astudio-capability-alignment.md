@@ -220,4 +220,67 @@
 - [ ] `npm run build` 通过。
 - [ ] 本分支 `git diff master...HEAD` 只包含本计划范围。
 
+---
+
+## 补充对齐（T016–T020）
+
+T001–T015 覆盖计划声明的能力面。相对 `dsh-workbuddy-connect` 的全部模块逐文件比对后，仍有三类缺口：真实能力缺口、接线缺口、共享类型重构。以下补足，不推翻任何既有裁决（双 variant、WSL、桌面凭据保护、legacy 设置、WorkBuddy gateway UA 仍不移植）。
+
+### T016 update 真实版本检查 + 接线
+
+**Files:**
+- Create: `src/update.ts`
+- Modify: `src/update-route.ts`、`src/index.ts`
+- Test: `tests/update.spec.ts`（新增），扩展 `tests/update-route.spec.ts`
+
+**Acceptance:**
+- [ ] `checkAStudioUpdate` 先读 npm dist-tags 判断是否有新版本，再富化 GitHub releases，失败时降级。
+- [ ] 版本比较遵循 SemVer 优先级，prerelease 规则与上游一致。
+- [ ] `registerAStudioUpdateRoute` 在 index.ts 中以 `ASTRO_VERSION` 注册，路由实际返回 checkAStudioUpdate 的结果。
+- [ ] 不回显 token；上游响应有大小上限和超时。
+
+### T017 探测路由接线
+
+**Files:**
+- Modify: `src/index.ts`
+- Test: `tests/index.spec.ts`（扩展）
+
+**Acceptance:**
+- [ ] index.ts 创建 probe store、probe service、probe key，并调用 `registerAStudioProbeRoute`。
+- [ ] probe route 注册后 `POST /astudio/probe/{modelId}` 可达（需要 loopback + 共享 key）。
+
+### T018 status 路由探测摘要接线
+
+**Files:**
+- Modify: `src/index.ts`
+- Test: `tests/index.spec.ts`（扩展）
+
+**Acceptance:**
+- [ ] `registerAStudioStatusRoute` 收到 probe store，status 文档的 `probe` 段填充真实记录。
+
+### T019 pi-ai-guard 诊断
+
+**Files:**
+- Create: `src/pi-ai-guard.ts`
+- Modify: `src/index.ts`（或 adapter.ts）
+- Test: `tests/pi-ai-guard.spec.ts`
+
+**Acceptance:**
+- [ ] `resolvedPiAiVersion()` 读取实际加载的 `@earendil-works/pi-ai` 版本。
+- [ ] 版本不匹配时 `piAiVersionWarning()` 返回诊断文案，匹配或不可读时返回 undefined。
+- [ ] 在插件加载时记录警告（非致命）。
+
+### T020 status-paths 共享类型/路径
+
+**Files:**
+- Create: `src/status-paths.ts`
+- Modify: `src/web-status.ts`、`src/probe-route.ts`、`src/update-route.ts`
+- Test: 各路由测试回归
+
+**Acceptance:**
+- [ ] 路由路径常量集中到 `src/status-paths.ts`。
+- [ ] web-facing 类型（status/probe/update 响应形状）集中或引用，不重复定义。
+
+
+
 
