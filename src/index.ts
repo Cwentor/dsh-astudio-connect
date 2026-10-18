@@ -116,7 +116,7 @@ export function apply(ctx: Context, config: Config): void {
     }
 
     // Register the status route on the host web server.
-    registerAStudioStatusRoute(ctx, { store, catalog })
+    registerAStudioStatusRoute(ctx, { store, catalog, probe: probeStore })
 
     // Register the update route on the host web server.
     registerAStudioUpdateRoute(ctx, { currentVersion: ASTRO_VERSION })
