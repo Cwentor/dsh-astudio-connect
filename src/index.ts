@@ -22,6 +22,7 @@ import { ASTRO_VERSION } from './version.ts'
 import { createAStudioProbeStore } from './probe-store.ts'
 import { createAStudioProbeService } from './probe-service.ts'
 import { createAStudioProbeKey, registerAStudioProbeRoute } from './probe-route.ts'
+import { piAiVersionWarning } from './pi-ai-guard.ts'
 
 export { ASTRO_PROVIDER, ASTRO_STREAM_IDLE_TIMEOUT_MS, createAStudioAdapter } from './adapter.ts'
 export { createAStudioShim, type AStudioShim } from './shim.ts'
@@ -64,6 +65,12 @@ export const Config: z<Config> = z.object({
  * the host calls `ctx.dispose()`.
  */
 export function apply(ctx: Context, config: Config): void {
+  // Report a shadowed pi-ai copy once, at load. See pi-ai-guard.ts: the plugin
+  // still runs, but a mismatched generation otherwise surfaces only as an
+  // opaque PI_AI_ERROR on the first request (issue #92).
+  const piAiWarning = piAiVersionWarning()
+  if (piAiWarning !== undefined) ctx.logger.warn(`dsh-astudio-connect: ${piAiWarning}`)
+
   const store = createAStudioAuth(config.configPath !== undefined ? { configPath: config.configPath } : {})
   const upstream = createAStudioUpstream()
   const visibility = createAStudioVisibilityStore()
