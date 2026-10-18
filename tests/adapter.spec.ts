@@ -16,6 +16,8 @@ const mockShim: AStudioShim = {
 const mockCatalog: AStudioCatalog = {
   current: () => DEFAULT_CATALOG,
   refresh: async () => {},
+  source: () => 'fallback',
+  fetchedAtMs: () => undefined,
 }
 
 describe('createAStudioAdapter', () => {

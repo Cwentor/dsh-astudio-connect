@@ -6,6 +6,8 @@
  */
 
 import type { AStudioUpstreamClient } from './upstream.ts'
+import { ASTRO_LOCAL_IDENTITY } from './identity.ts'
+import { astudioCatalogPath, writeCatalogSnapshot, readCatalogSnapshot } from './catalog-store.ts'
 
 /** Info for a single model. */
 export interface AStudioModelInfo {
@@ -22,6 +24,10 @@ export interface AStudioCatalog {
   current(): readonly AStudioModelInfo[]
   /** Force a refresh from the upstream. */
   refresh(): Promise<void>
+  /** Where the current models came from. */
+  source(): 'live' | 'saved' | 'fallback'
+  /** When the current models were fetched, for live and saved sources. */
+  fetchedAtMs(): number | undefined
 }
 
 /** Options for creating a catalog. */
@@ -30,6 +36,10 @@ export interface AStudioCatalogOptions {
   token: () => string | undefined
   /** Override the base URL for /v1/models (used by tests). */
   baseUrl?: string
+  /** Override the identity used for catalog persistence. */
+  identity?: string
+  /** Override the catalog snapshot path. */
+  catalogPath?: string
 }
 
 /** Default built-in catalog — used when the upstream /v1/models is unavailable. */
@@ -50,45 +60,69 @@ export const DEFAULT_CATALOG: readonly AStudioModelInfo[] = [
  */
 export function createAStudioCatalog(options: AStudioCatalogOptions): AStudioCatalog {
   let cached: readonly AStudioModelInfo[] = DEFAULT_CATALOG
+  let source: 'live' | 'saved' | 'fallback' = 'fallback'
+  let fetchedAtMs: number | undefined
   const baseUrl = options.baseUrl ?? 'https://maas-api.cn-huabei-1.xf-yun.com/v1'
+  const identity = options.identity ?? ASTRO_LOCAL_IDENTITY
+  const catalogPath = options.catalogPath ?? astudioCatalogPath()
+
+  async function loadSaved(): Promise<void> {
+    const snapshot = await readCatalogSnapshot(catalogPath, identity)
+    if (snapshot === undefined) return
+    cached = snapshot.models
+    source = 'saved'
+    fetchedAtMs = snapshot.fetchedAtMs
+  }
 
   async function refresh(): Promise<void> {
     const token = options.token()
     if (token === undefined) return
 
+    let fetched: readonly AStudioModelInfo[] | undefined
     try {
       const res = await fetch(`${baseUrl}/models`, {
         headers: { Authorization: `Bearer ${token}` },
       })
-      if (!res.ok) return
-
-      const data = (await res.json()) as { data?: Array<{ id: string }> }
-      if (!data.data || data.data.length === 0) return
-
-      // Map upstream model ids to catalog entries, keeping defaults for metadata.
-      const knownIds = new Set(DEFAULT_CATALOG.map(m => m.id))
-      const upstreamIds = new Set(data.data.map(d => d.id))
-      cached = DEFAULT_CATALOG.filter(m => upstreamIds.has(m.id))
-
-      // Add any upstream-only models with generic metadata.
-      for (const up of data.data) {
-        if (!knownIds.has(up.id)) {
-          cached = [...cached, {
-            id: up.id,
-            name: up.id,
-            reasoning: false,
-            contextWindow: 131072,
-            maxTokens: 8192,
-          }]
+      if (res.ok) {
+        const data = (await res.json()) as { data?: Array<{ id: string }> }
+        if (data.data && data.data.length > 0) {
+          const knownIds = new Set(DEFAULT_CATALOG.map(m => m.id))
+          const upstreamIds = new Set(data.data.map(d => d.id))
+          fetched = DEFAULT_CATALOG.filter(m => upstreamIds.has(m.id))
+          for (const up of data.data) {
+            if (!knownIds.has(up.id)) {
+              fetched = [...fetched, {
+                id: up.id,
+                name: up.id,
+                reasoning: false,
+                contextWindow: 131072,
+                maxTokens: 8192,
+              }]
+            }
+          }
         }
       }
     } catch {
-      // Network error — keep the cached catalog.
+      // Network error — fall through to the saved snapshot below.
     }
+
+    if (fetched !== undefined) {
+      await writeCatalogSnapshot(catalogPath, identity, fetched, Date.now())
+      cached = fetched
+      source = 'live'
+      fetchedAtMs = Date.now()
+      return
+    }
+
+    const hadFallback = source === 'fallback'
+    await loadSaved()
+    if (hadFallback) return
   }
 
   return {
     current: () => cached,
     refresh,
+    source: () => source,
+    fetchedAtMs: () => fetchedAtMs,
   }
 }
