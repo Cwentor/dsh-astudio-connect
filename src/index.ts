@@ -15,6 +15,7 @@ import { createAStudioCatalog } from './catalog.ts'
 import { createAStudioShim } from './shim.ts'
 import { createAStudioAdapter, ASTRO_PROVIDER } from './adapter.ts'
 import { registerAStudioStatusRoute } from './web-status.ts'
+import { createAStudioVisibilityStore } from './visibility-store.ts'
 
 export { ASTRO_PROVIDER, ASTRO_STREAM_IDLE_TIMEOUT_MS, createAStudioAdapter } from './adapter.ts'
 export { createAStudioShim, type AStudioShim } from './shim.ts'
@@ -59,9 +60,11 @@ export const Config: z<Config> = z.object({
 export function apply(ctx: Context, config: Config): void {
   const store = createAStudioAuth(config.configPath !== undefined ? { configPath: config.configPath } : {})
   const upstream = createAStudioUpstream()
+  const visibility = createAStudioVisibilityStore()
   const catalog = createAStudioCatalog({
     upstream,
     token: () => store.resolve(),
+    visibility,
   })
 
   const shim = createAStudioShim({

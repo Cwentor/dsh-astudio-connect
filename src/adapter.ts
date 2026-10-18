@@ -173,10 +173,13 @@ export class AStudioPiAiAdapter extends PiAiAdapter {
 
   override async listModels(provider: string): Promise<readonly LlmModelInfo[]> {
     const models = await super.listModels(provider)
-    return models.map(model => {
-      const info = this.infoFor(model.id)
-      return info === undefined ? model : { ...model, name: info.name }
-    })
+    const hidden = new Set(this.catalog.hiddenModelIds())
+    return models
+      .filter(model => !hidden.has(model.id))
+      .map(model => {
+        const info = this.infoFor(model.id)
+        return info === undefined ? model : { ...model, name: info.name }
+      })
   }
 
   override async resolveModel(provider: string, model: string, signal?: AbortSignal): Promise<LlmResolvedModelInfo> {
