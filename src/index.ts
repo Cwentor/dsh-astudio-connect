@@ -8,6 +8,7 @@
 
 import type { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
+import type { SettingsNamespace } from '@deepseek-ai/dsh-settings'
 import { createAStudioAuth } from './auth.ts'
 import { createAStudioUpstream } from './upstream.ts'
 import { createAStudioCatalog } from './catalog.ts'
@@ -19,6 +20,19 @@ export { createAStudioShim, type AStudioShim } from './shim.ts'
 export { createAStudioAuth, readTokenFromConfig } from './auth.ts'
 export { createAStudioUpstream, DEFAULT_UPSTREAM_URL } from './upstream.ts'
 export { createAStudioCatalog, DEFAULT_CATALOG } from './catalog.ts'
+
+/** The model registry required before the provider can register. */
+export const inject = ['llm']
+
+/**
+ * Settings namespace owning the AStudio card's section.
+ *
+ * A nominal string cast to the seam type. The namespace is what
+ * `settings.yaml` and the TUI `/settings` read, and on DSH 0.1.5 the
+ * settings Plugins tab dispatches a card by rendering `settings.plugin.item`
+ * with `entryKey = ns` for each namespace the host serves.
+ */
+export const ASTRO_SETTINGS_NS = 'astudio' as SettingsNamespace
 
 /** Plugin configuration schema. */
 export interface Config {

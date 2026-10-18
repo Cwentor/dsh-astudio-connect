@@ -164,3 +164,9 @@ dsh-astudio-connect 插件的微任务拆解。每个任务独立交付，配套
 | T030 | done | T030: index |
 | T031 | done | T031: client |
 | T040 | done | T040: integration |
+| T050 | done | T050: inject+ns |
+| T060 | pending | — |
+| T070 | pending | — |
+| T080 | pending | — |
+| T090 | pending | — |
+| T100 | pending | — |

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { apply, Config, ASTRO_PROVIDER } from '../src/index.ts'
+import { apply, Config, ASTRO_PROVIDER, inject, ASTRO_SETTINGS_NS } from '../src/index.ts'
 import type { Context } from '@deepseek-ai/cordis'
 import { writeFileSync, unlinkSync, existsSync } from 'node:fs'
 import { join } from 'node:path'
@@ -36,6 +36,14 @@ describe('apply', () => {
 
   it('exports ASTRO_PROVIDER constant', () => {
     expect(ASTRO_PROVIDER).toBe('astudio')
+  })
+
+  it('exports inject as llm seam', () => {
+    expect(inject).toEqual(['llm'])
+  })
+
+  it('exports ASTRO_SETTINGS_NS', () => {
+    expect(ASTRO_SETTINGS_NS).toBe('astudio')
   })
 
   it('applies without throwing when config file exists', async () => {
