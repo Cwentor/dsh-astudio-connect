@@ -1,6 +1,6 @@
 /**
- * Confirm the pi-ai copy this plugin actually loaded is the generation the
- * DSH 0.2.1-rc.1 host was built against.
+ * Confirm the pi-ai copy this plugin actually loaded is the generation its own
+ * `package.json` pins.
  *
  * #92's failure mode: a pnpm profile with `nodeLinker: hoisted` and
  * `autoInstallPeers: false` installs no peer for us, so a co-installed
@@ -15,6 +15,11 @@
  * It is deliberately a warning, not a throw. The plugin is mid-load at this
  * point, and a hard failure here would take down a host that may still be able
  * to serve other providers. The message is the product; the operator decides.
+ *
+ * The DSH host version is named nowhere here on purpose. It changes on the
+ * host's release cadence, while this guard is about the pi-ai generation alone;
+ * an earlier revision named the host and its value then went stale — it kept
+ * claiming a host generation that package.json had already moved past.
  *
  * @module dsh-astudio-connect/pi-ai-guard
  */
