@@ -17,7 +17,47 @@
 
 - Node.js `^22.19.0 || >=24.0.0`
 - AStudio 应用已安装并登录（提供 maas-api token）
-- DeepSeek Harness（DSH）运行时
+- DeepSeek Harness（DSH）运行时，版本要求见下节
+
+## DSH 版本支持
+
+插件对宿主分两处声明依赖，都按 seam 包版本锁定在 **`0.2.0-rc.2`**。
+
+**宿主侧 `peerDependencies`**（运行在宿主进程）：
+
+| 包 | 用途 |
+|---|---|
+| `dsh-llm` / `dsh-llm-pi-ai` | 注册 `astudio` provider |
+| `dsh-host-webserver` | 设置卡片与积分徽标的路由 |
+| `dsh-settings` | 插件配置 |
+| `dsh-home-paths` | 快照与显隐的落盘位置 |
+| `dsh-attachment` | 附件传递 |
+| `@deepseek-ai/cordis` | `^4.0.2`（`4.x`） |
+| `@deepseek-ai/schemastery` | `^3.18.2` |
+| `react` | `^18.2.0` |
+
+**浏览器侧 `dsh.client.inject`**（客户端 bundle 依赖的宿主包）：
+
+`dsh-client-ui-renderer`、`dsh-client-ui-conversation`、`dsh-client-ui-model-selection`、`dsh-client-locale`、`dsh-api-remotes`、`dsh-api-session-controller`。
+
+| 状态 | 版本 | 说明 |
+|---|---|---|
+| **已实测** | DSH Desktop **2.0.17**（seam `0.2.0-rc.2`） | 当前开发与验证环境：provider 注册、设置卡片、积分徽标均在实机确认 |
+| **代码保留兼容，未验证** | DSH **0.1.5** | 见下方说明 |
+
+**关于 0.1.5**：`src/client/index.tsx` 里同时注册了两个设置面槽位。0.1.5 用 `settings.plugin.item`（键控，一个 namespace 一张卡），0.2.x 改用 `plugins.bundle.config`（按包名分发一整个 bundle 页）。槽位注册跟随声明生命周期——宿主没声明就永远不触发——所以一份 bundle 能同时服务两代宿主，无需版本判断。
+
+但当前依赖里 **`settings.plugin.item` 已没有任何包声明**（只有 `plugins.bundle.config`），也就是说 0.1.5 这条路径在当前依赖树中无法被验证。它由 `src/client/index.tsx` 中的编译期 SlotMap 镜像维持编译，属于**存量兼容代码，不构成对 0.1.5 的支持承诺**。
+
+### pi-ai 版本约束
+
+`@earendil-works/pi-ai` 必须是 **`0.87.1`**，这是硬约束而非建议。
+
+失败机制：宿主会给请求补一条 system message（pi-ai 0.87 的 `collapseSystemMessages`），而被解析到的旧副本在 `estimateMessageTokens` 里对不认识的块读取 `.length`，于是每个请求都在到达上游之前以 `PI_AI_ERROR` 失败。典型触发场景是 `nodeLinker: hoisted` + `autoInstallPeers: false` 的 profile：没有为插件安装 peer，同装的其他插件的旧 pi-ai 占据 profile 根目录并赢得裸说明符解析。
+
+插件启动时用 `pi-ai-guard.ts` 校验实际解析到的副本，不匹配只记一条警告（非致命）——此时宿主仍可能服务其他 provider，但本插件的请求会失败。若日志出现该警告，检查是否有重复的 pi-ai 副本被解析。
+
+> Node 也是同样道理：插件按 ESM 发布，`bin` 依赖 Node 22.19+ / 24+ 的模块解析行为。
 
 ## 安装
 
