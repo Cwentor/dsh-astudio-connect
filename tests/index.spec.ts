@@ -41,8 +41,10 @@ describe('apply', () => {
     expect(ASTRO_PROVIDER).toBe('astudio')
   })
 
-  it('exports inject as llm seam', () => {
-    expect(inject).toEqual(['llm'])
+  it('exports inject as the llm and webServer seams', () => {
+    // webServer backs the settings-card routes; declaring it is also what keeps
+    // a route failure from reading as a failed shim startup.
+    expect(inject).toEqual(['llm', 'webServer'])
   })
 
   it('exports ASTRO_SETTINGS_NS', () => {
