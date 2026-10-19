@@ -70,4 +70,11 @@ describe('apply', () => {
     const ctx = createMockContext()
     expect(() => apply(ctx, {})).not.toThrow()
   })
+
+  it('applies without throwing when DSH registers with no config (undefined)', () => {
+    // Regression for the runtime crash seen in DSH: the cordis insert carries
+    // no config, so `config` is undefined and must not be read bare.
+    const ctx = createMockContext()
+    expect(() => apply(ctx, undefined as unknown as Parameters<typeof apply>[1])).not.toThrow()
+  })
 })

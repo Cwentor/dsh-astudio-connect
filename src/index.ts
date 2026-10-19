@@ -65,13 +65,18 @@ export const Config: z<Config> = z.object({
  * the host calls `ctx.dispose()`.
  */
 export function apply(ctx: Context, config: Config): void {
+  // DSH may register this plugin without an explicit config (the cordis.patch
+  // insert carries none), so `config` can be undefined at runtime even though
+  // the schema type is non-optional. Default it up-front; the only reads
+  // below are the configPath/displayName optionals.
+  const cfg: Config = config ?? {}
   // Report a shadowed pi-ai copy once, at load. See pi-ai-guard.ts: the plugin
   // still runs, but a mismatched generation otherwise surfaces only as an
   // opaque PI_AI_ERROR on the first request (issue #92).
   const piAiWarning = piAiVersionWarning()
   if (piAiWarning !== undefined) ctx.logger.warn(`dsh-astudio-connect: ${piAiWarning}`)
 
-  const store = createAStudioAuth(config.configPath !== undefined ? { configPath: config.configPath } : {})
+  const store = createAStudioAuth(cfg.configPath !== undefined ? { configPath: cfg.configPath } : {})
   const upstream = createAStudioUpstream()
   const visibility = createAStudioVisibilityStore()
   const catalog = createAStudioCatalog({
@@ -105,7 +110,7 @@ export function apply(ctx: Context, config: Config): void {
     const { adapter } = createAStudioAdapter({
       shim,
       catalog,
-      ...(config.displayName !== undefined ? { displayName: config.displayName } : {}),
+      ...(cfg.displayName !== undefined ? { displayName: cfg.displayName } : {}),
     })
 
     const releaseAdapter = ctx.llm.registerAdapter([ASTRO_PROVIDER], adapter)
