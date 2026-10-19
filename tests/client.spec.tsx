@@ -28,7 +28,7 @@ async function flush(): Promise<void> {
 /** A status document with the required sections. */
 function statusDoc(overrides: Partial<{
   auth: { state: 'signed-in' | 'signed-out' }
-  catalog: { source: string; models: Array<{ id: string; name: string }> }
+  catalog: { source: string; modelCount: number; models: Array<{ id: string; name: string }> }
   probeKey: string
 }> = {}): unknown {
   return {

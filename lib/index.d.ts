@@ -199,7 +199,17 @@ interface AStudioAdapter {
 declare function createAStudioAdapter(options: AStudioAdapterOptions): AStudioAdapter;
 //#endregion
 //#region src/index.d.ts
-/** The model registry required before the provider can register. */
+/**
+ * Host services this plugin reads.
+ *
+ * `webServer` is required even though the status/update/probe routes are
+ * secondary to model routing: the plugin's startup chain runs inside
+ * `shim.ready.then()`, and every `ctx.<service>` read there is resolved against
+ * the mounting fiber's inject list. A route registration that throws takes the
+ * whole chain down with it — so a service this plugin merely *optionally* wants
+ * is declared here as a hard requirement, and `apply()` guards its absence with
+ * `ctx.get()` instead of letting an un-injected read throw.
+ */
 declare const inject: string[];
 /**
  * Settings namespace owning the AStudio card's section.
@@ -227,5 +237,32 @@ declare const Config: z<Config>;
  * the host calls `ctx.dispose()`.
  */
 declare function apply(ctx: Context, config: Config): void;
+/**
+ * The plugin object the DSH loader mounts.
+ *
+ * This MUST be an object rather than the bare `apply` function. The loader
+ * normalizes every plugin module with
+ *
+ *     exports = exports.default ?? exports
+ *
+ * so `export default apply` made the loader adopt that function directly — and
+ * a function carries none of the module's other exports. `inject` was dropped,
+ * the plugin mounted on an unscoped `Include` fiber, and each `ctx.llm` /
+ * `ctx.webServer` read inside it threw `cannot get property "…" without
+ * inject`. Because that throw is wrapped by the `.catch()` around
+ * `shim.ready.then()`, and cordis JSON-stringifies a trailing Error argument
+ * (`JSON.stringify(new Error(…))` is `{}`), the only trace was a log line
+ * reading `shim failed to start {}` while the `astudio` provider silently
+ * failed to register — which is why the model picker listed no AStudio models
+ * even though the settings card rendered fine.
+ *
+ * Keeping `apply` (and `inject`) reachable as named exports is harmless: the
+ * loader only ever reads the default when one exists.
+ */
+declare const plugin: {
+  name: string;
+  inject: string[];
+  apply: typeof apply;
+};
 //#endregion
-export { ASTRO_PROVIDER, ASTRO_SETTINGS_NS, ASTRO_STREAM_IDLE_TIMEOUT_MS, type AStudioShim, Config, DEFAULT_CATALOG, DEFAULT_UPSTREAM_URL, apply, apply as default, createAStudioAdapter, createAStudioAuth, createAStudioCatalog, createAStudioShim, createAStudioUpstream, inject, readTokenFromConfig };
+export { ASTRO_PROVIDER, ASTRO_SETTINGS_NS, ASTRO_STREAM_IDLE_TIMEOUT_MS, type AStudioShim, Config, DEFAULT_CATALOG, DEFAULT_UPSTREAM_URL, apply, createAStudioAdapter, createAStudioAuth, createAStudioCatalog, createAStudioShim, createAStudioUpstream, plugin as default, inject, readTokenFromConfig };
