@@ -117,20 +117,30 @@ describe('apply', () => {
     }
   }
 
-  it('registers the locale namespace and all three slots it contributes to', () => {
+  it('registers the locale namespace and both slots it contributes to', () => {
     const registered: string[] = []
     apply(clientContext(registered) as never)
 
     expect(registered).toContain('locale:settings.astudio')
     expect(registered).toContain('inject:plugins.bundle.config')
-    expect(registered).toContain('inject:settings.plugin.item')
     expect(registered).toContain('register:plugins.bundle.config')
-    expect(registered).toContain('register:settings.plugin.item')
     // The composer badge: beside the model selector, gated on the session's
     // selected provider.
     expect(registered).toContain('service:modelDirectories')
     expect(registered).toContain('inject:conversation.input.right')
     expect(registered).toContain('register:conversation.input.right')
+  })
+
+  it('no longer contributes to the DSH 0.1.5 settings tab seat', () => {
+    // 0.1.5 support was dropped: `settings.plugin.item` is declared by no
+    // shipped package any more, so registering it was dead code kept alive only
+    // by a local SlotMap mirror. A 0.2.x host must see exactly one settings
+    // surface from this bundle.
+    const registered: string[] = []
+    apply(clientContext(registered) as never)
+
+    expect(registered).not.toContain('inject:settings.plugin.item')
+    expect(registered).not.toContain('register:settings.plugin.item')
   })
 
   it('exports the bundle name used as the config-page key', () => {

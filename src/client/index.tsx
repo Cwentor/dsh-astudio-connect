@@ -1,26 +1,18 @@
 /**
- * Browser half: the AStudio settings card, on whichever settings surface the
- * host provides.
+ * Browser half: the AStudio settings card and the composer points badge.
  *
- * One bundle serves two DSH generations. DSH 0.1.5 renders plugin cards in the
- * settings Plugins tab, which dispatches the keyed `settings.plugin.item` slot
- * once per served settings namespace. DSH 0.2.x moved plugin configuration to
- * the Plugins page, whose `plugins.bundle.config` slot carries one bundle-keyed
- * entry. `ctx.slots.inject` follows the slot's declaration lifetime — the
- * callback runs where the slot is declared and simply never runs where it is
- * not — so registering BOTH seams needs no host-version check: each host
- * materializes exactly the seam it ships.
+ * Configuration surface: DSH 0.2.x's Plugins page, whose
+ * `plugins.bundle.config` slot carries one bundle-keyed entry. `ctx.slots.inject`
+ * follows the slot's declaration lifetime — the callback runs where the slot is
+ * declared and simply never runs where it is not.
  *
  * @module dsh-astudio-connect/client
  */
 
 import type { Context as ClientContext } from '@deepseek-ai/cordis'
-// Type-only: the two slot declarations this bundle registers into. The 0.1.5
-// settings tab declares `settings.plugin.item`; the 0.2.x Plugins page declares
-// `plugins.bundle.config`. Cross-plugin collaboration goes through cordis
-// services, so value imports would fail the client bundle-purity gate; at
-// runtime each host declares only the slot it ships.
-import type {} from '@deepseek-ai/dsh-client-ui-settings-plugins/client'
+// Type-only: the slot declarations this bundle registers into. Cross-plugin
+// collaboration goes through cordis services, so value imports would fail the
+// client bundle-purity gate.
 import type {} from '@deepseek-ai/dsh-client-ui-plugin-manager/client'
 import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
 import type {} from '@deepseek-ai/dsh-client-locale/client'
@@ -30,7 +22,6 @@ import type {} from '@deepseek-ai/dsh-client-locale/client'
 import type {} from '@deepseek-ai/dsh-client-ui-model-selection/client'
 import type {} from '@deepseek-ai/dsh-client-ui-slots'
 import { AStudioConfigPage } from './AStudioConfigPage.tsx'
-import { AStudioPluginCard } from './AStudioPluginCard.tsx'
 import type { AStudioPluginCardProps } from './AStudioPluginCard.tsx'
 import { AStudioPointsBadge } from './AStudioPointsBadge.tsx'
 import { en, zh } from './locales.ts'
@@ -43,40 +34,19 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
   }
   interface SlotMap {
     /**
-     * Compile-time mirror of DSH 0.1.5's settings Plugins-tab seat.
-     *
-     * DSH 0.2.x dropped this slot entirely — its Plugins page declares
-     * `plugins.bundle.config` instead — so no shipped dependency declares the
-     * key any more and the name is not in `SlotMap`. The mirror keeps the 0.1.5
-     * seam compiling: that slot's declaration lifetime still decides whether the
-     * registration runs, so a 0.2.x host simply never fires the inject below.
-     * Drop this mirror once 0.1.5 support ends.
-     */
-    'settings.plugin.item': {
-      kind: 'keyed'
-      scope: 'root'
-      owner: AStudioLegacySettingsCardOwnerProps
-    }
-    /**
      * Compile-time mirror of the composer tool row this bundle contributes the
      * points badge to.
      *
-     * Declared here for the same reason as the 0.1.5 mirror above: the slot is
-     * owned by `dsh-client-ui-conversation`, which this bundle registers into
-     * rather than depends on at value level. The list kind is load-bearing — the
-     * badge sits BESIDE the model selector, and `conversation.input.model` is a
-     * single seat already occupied by it.
+     * Declared here because the slot is owned by `dsh-client-ui-conversation`,
+     * which this bundle registers into rather than depends on at value level.
+     * The list kind is load-bearing — the badge sits BESIDE the model selector,
+     * and `conversation.input.model` is a single seat already occupied by it.
      */
     'conversation.input.right': {
       kind: 'list'
       scope: 'session'
     }
   }
-}
-
-/** Owner share of the 0.1.5 settings-tab seat: the tab supplies nothing to entries. */
-interface AStudioLegacySettingsCardOwnerProps {
-  children?: never
 }
 
 /** Stable browser-plugin name. */
@@ -155,9 +125,8 @@ export function apply(ctx: ClientContext): void {
   })
   const t = ctx.locale.bind(namespace) as AStudioPluginCardProps['t']
 
-  // SEAM ONE — DSH 0.2.x's Plugins page. One configuration entry for the whole
-  // bundle, keyed by its package name as the page dispatches it. On 0.1.5 hosts
-  // nothing declares this slot, so it never runs there.
+  // SEAM ONE — DSH's Plugins page. One configuration entry for the whole bundle,
+  // keyed by its package name as the page dispatches it.
   guardClientContribution('plugins.bundle.config page', () => {
     ctx.slots.inject('plugins.bundle.config', () => (
       guardClientContribution('plugins.bundle.config page', () => ctx.slots.register({
@@ -168,21 +137,7 @@ export function apply(ctx: ClientContext): void {
     ))
   })
 
-  // SEAM TWO — DSH 0.1.5's settings Plugins tab. One card per served namespace,
-  // keyed by the namespace the tab dispatches. On 0.2.x hosts nothing declares
-  // this slot, so this registration simply never runs there.
-  guardClientContribution('settings.plugin.item card', () => {
-    ctx.slots.inject('settings.plugin.item', () => (
-      guardClientContribution('settings.plugin.item card', () => ctx.slots.register({
-        name: 'settings.plugin.item',
-        key: 'astudio',
-        priority: 30,
-        inject: (): AStudioPluginCardProps => ({ t }),
-      }, AStudioPluginCard)) ?? NOOP_DISPOSER
-    ))
-  })
-
-  // SEAM THREE — the composer tool row, beside the model selector. The badge
+  // SEAM TWO — the composer tool row, beside the model selector. The badge
   // resolves the session's live selection through the host's model directories,
   // so it appears only while an AStudio model is selected. `conversation.input.model`
   // is a single seat already occupied by the model selector itself, which is why

@@ -42,12 +42,14 @@
 
 | 状态 | 版本 | 说明 |
 |---|---|---|
-| **已实测** | DSH Desktop **2.0.17**（seam `0.2.0-rc.2`） | 当前开发与验证环境：provider 注册、设置卡片、积分徽标均在实机确认 |
-| **代码保留兼容，未验证** | DSH **0.1.5** | 见下方说明 |
+| **支持** | DSH Desktop **2.0.17**（seam `0.2.0-rc.2`） | 当前开发与验证环境：provider 注册、设置卡片、积分徽标均在实机确认 |
+| **不支持** | DSH **0.1.5** | 已移除兼容，见下 |
 
-**关于 0.1.5**：`src/client/index.tsx` 里同时注册了两个设置面槽位。0.1.5 用 `settings.plugin.item`（键控，一个 namespace 一张卡），0.2.x 改用 `plugins.bundle.config`（按包名分发一整个 bundle 页）。槽位注册跟随声明生命周期——宿主没声明就永远不触发——所以一份 bundle 能同时服务两代宿主，无需版本判断。
+**关于 0.1.5**：DSH 0.1.5 用 `settings.plugin.item`（键控，一个 namespace 一张卡），0.2.x 改用 `plugins.bundle.config`（按包名分发一整个 bundle 页）。插件**只注册 `plugins.bundle.config`**，在 0.1.5 上不会渲染设置卡片。
 
-但当前依赖里 **`settings.plugin.item` 已没有任何包声明**（只有 `plugins.bundle.config`），也就是说 0.1.5 这条路径在当前依赖树中无法被验证。它由 `src/client/index.tsx` 中的编译期 SlotMap 镜像维持编译，属于**存量兼容代码，不构成对 0.1.5 的支持承诺**。
+移除兼容的理由：`settings.plugin.item` 已无任何已发布包声明，那条注册路径在当前依赖树中无法被编译之外的任何方式验证——保留它只是死代码。0.2.x 宿主的行为不受影响（该槽位在 0.2.x 上从不会触发）。
+
+> 若仍需 0.1.5，请在 `src/client/index.tsx` 重新加入该 seam 的 SlotMap 镜像与注册，并在真实的 0.1.5 宿主上验证后再声明支持。
 
 ### pi-ai 版本约束
 

@@ -328,10 +328,9 @@ declare const inject: string[];
 /**
  * Settings namespace owning the AStudio card's section.
  *
- * A nominal string cast to the seam type. The namespace is what
- * `settings.yaml` and the TUI `/settings` read, and on DSH 0.1.5 the
- * settings Plugins tab dispatches a card by rendering `settings.plugin.item`
- * with `entryKey = ns` for each namespace the host serves.
+ * A nominal string cast to the seam type. The namespace is what `settings.yaml`
+ * and the TUI `/settings` read, and it is the key the Plugins page dispatches
+ * `plugins.bundle.config` by when it shows this bundle's configuration.
  */
 declare const ASTRO_SETTINGS_NS: SettingsNamespace;
 /** Plugin configuration schema. */

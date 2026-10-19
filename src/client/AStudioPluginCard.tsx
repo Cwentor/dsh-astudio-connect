@@ -1,10 +1,9 @@
 /**
- * AStudio status card, rendered on whichever settings surface the host
- * provides: dispatched by DSH 0.1.5's settings Plugins tab, or mounted by the
- * bundle configuration page DSH 0.2.x's Plugins page renders. The component is
- * surface-agnostic — its only prop is the injected copy `t`; all data comes
- * from the same-origin status document, and all writes go through the probe
- * route keyed by the in-process probe key the document carries.
+ * AStudio status card, mounted by the bundle configuration page the Plugins
+ * page renders. The component is surface-agnostic — its only prop is the
+ * injected copy `t`; all data comes from the same-origin status document, and
+ * all writes go through the probe route keyed by the in-process probe key the
+ * document carries.
  *
  * @module dsh-astudio-connect/client/AStudioPluginCard
  */
