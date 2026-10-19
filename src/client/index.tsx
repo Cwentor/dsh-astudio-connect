@@ -24,10 +24,15 @@ import type {} from '@deepseek-ai/dsh-client-ui-settings-plugins/client'
 import type {} from '@deepseek-ai/dsh-client-ui-plugin-manager/client'
 import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
 import type {} from '@deepseek-ai/dsh-client-locale/client'
+// Type-only: brings the `ctx.modelDirectories` module augmentation. It is the
+// only service the points badge resolves its session's model selection through,
+// and it declares no slot of its own.
+import type {} from '@deepseek-ai/dsh-client-ui-model-selection/client'
 import type {} from '@deepseek-ai/dsh-client-ui-slots'
 import { AStudioConfigPage } from './AStudioConfigPage.tsx'
 import { AStudioPluginCard } from './AStudioPluginCard.tsx'
 import type { AStudioPluginCardProps } from './AStudioPluginCard.tsx'
+import { AStudioPointsBadge } from './AStudioPointsBadge.tsx'
 import { en, zh } from './locales.ts'
 import type { AStudioSettingsKey } from './locales.ts'
 
@@ -51,6 +56,20 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
       kind: 'keyed'
       scope: 'root'
       owner: AStudioLegacySettingsCardOwnerProps
+    }
+    /**
+     * Compile-time mirror of the composer tool row this bundle contributes the
+     * points badge to.
+     *
+     * Declared here for the same reason as the 0.1.5 mirror above: the slot is
+     * owned by `dsh-client-ui-conversation`, which this bundle registers into
+     * rather than depends on at value level. The list kind is load-bearing — the
+     * badge sits BESIDE the model selector, and `conversation.input.model` is a
+     * single seat already occupied by it.
+     */
+    'conversation.input.right': {
+      kind: 'list'
+      scope: 'session'
     }
   }
 }
@@ -161,6 +180,33 @@ export function apply(ctx: ClientContext): void {
         inject: (): AStudioPluginCardProps => ({ t }),
       }, AStudioPluginCard)) ?? NOOP_DISPOSER
     ))
+  })
+
+  // SEAM THREE — the composer tool row, beside the model selector. The badge
+  // resolves the session's live selection through the host's model directories,
+  // so it appears only while an AStudio model is selected. `conversation.input.model`
+  // is a single seat already occupied by the model selector itself, which is why
+  // this contributes to the additive `input.right` list instead.
+  guardClientContribution('composer points badge', () => {
+    ctx.inject(['modelDirectories'], scope => {
+      guardClientContribution('composer points badge', () => {
+        scope.slots.inject('conversation.input.right', () => (
+          guardClientContribution('composer points badge', () => scope.slots.register({
+            name: 'conversation.input.right',
+            id: 'astudio-points',
+            order: 10,
+            // The host hands the session id as a plain string; the directory
+            // resolver takes the branded `SessionId` it was keyed by.
+            inject: (sessionId: string) => ({
+              directory: scope.modelDirectories.directoryFor(
+                sessionId as Parameters<typeof scope.modelDirectories.directoryFor>[0],
+              ).store,
+              t,
+            }),
+          }, AStudioPointsBadge)) ?? NOOP_DISPOSER
+        ))
+      })
+    })
   })
 }
 

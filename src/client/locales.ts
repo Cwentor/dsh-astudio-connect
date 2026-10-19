@@ -32,6 +32,11 @@ export const en = {
   probeNoResult: 'No probe results yet',
   requestFailed: 'Request failed',
   statusResponseInvalid: 'Status document invalid',
+  generalPoints: 'General',
+  sparkPoints: 'Spark',
+  refreshPoints: 'Refresh balance',
+  pointsUnavailable: 'Unavailable',
+  pointsExpired: 'Sign-in expired',
 } as const
 
 /** Copy keys of the `settings.astudio` namespace. */
@@ -61,4 +66,9 @@ export const zh: Record<AStudioSettingsKey, string> = {
   probeNoResult: '暂无探测记录',
   requestFailed: '请求失败',
   statusResponseInvalid: '状态文档无效',
+  generalPoints: '通用',
+  sparkPoints: '星火',
+  refreshPoints: '刷新积分余额',
+  pointsUnavailable: '暂不可用',
+  pointsExpired: '登录已失效',
 }

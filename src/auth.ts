@@ -178,6 +178,16 @@ export function createAStudioAuth(options: AStudioAuthOptions = {}) {
     modelBearerToken(): AStudioCredential {
       return currentModelToken()
     },
+    /**
+     * The `astron-session.json` this store reads its credentials from.
+     *
+     * The points client reads the account's `ssoSessionId` from the same file,
+     * so it is resolved here — where AStudio's layout is already known — rather
+     * than re-derived by the caller.
+     */
+    sessionPath(): string {
+      return sessionPath()
+    },
     invalidate(): void {
       cachedToken = null
       cachedModelToken = null

@@ -23,6 +23,8 @@ import { ASTRO_VERSION } from './version.ts'
 import { createAStudioProbeStore } from './probe-store.ts'
 import { createAStudioProbeService } from './probe-service.ts'
 import { createAStudioProbeKey, registerAStudioProbeRoute } from './probe-route.ts'
+import { createAStudioPointsClient } from './points.ts'
+import { registerAStudioPointsRoute } from './points-route.ts'
 import { piAiVersionWarning } from './pi-ai-guard.ts'
 
 export { ASTRO_PROVIDER, ASTRO_STREAM_IDLE_TIMEOUT_MS, createAStudioAdapter } from './adapter.ts'
@@ -30,6 +32,7 @@ export { createAStudioShim, type AStudioShim } from './shim.ts'
 export { createAStudioAuth, readTokenFromConfig } from './auth.ts'
 export { createAStudioUpstream, DEFAULT_UPSTREAM_URL } from './upstream.ts'
 export { createAStudioCatalog, DEFAULT_CATALOG } from './catalog.ts'
+export { createAStudioPointsClient, parseAStudioPointsBalance, readSsoSessionId } from './points.ts'
 
 /**
  * Host services this plugin reads.
@@ -211,6 +214,13 @@ function registerAStudioWebRoutes(
 
   // Register the update route on the host web server.
   registerAStudioUpdateRoute(ctx, { currentVersion: ASTRO_VERSION })
+
+  // Register the points route backing the composer badge. The client re-reads
+  // the session file on every upstream call, so an AStudio re-login is picked up
+  // by the next ↻ rather than pinning the badge to an expired session.
+  registerAStudioPointsRoute(ctx, {
+    client: createAStudioPointsClient({ sessionPath: store.sessionPath() }),
+  })
 
   // Register the probe route on the host web server.
   const probeService = createAStudioProbeService({

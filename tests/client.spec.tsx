@@ -83,33 +83,54 @@ describe('isAStudioWebStatus', () => {
 })
 
 describe('apply', () => {
-  it('registers the locale namespace and both settings seams', () => {
-    const registered: string[] = []
-    const ctx = {
+  /**
+   * A stand-in for the host client context: the locale face, the slot registry,
+   * and the model-directories service the composer badge resolves its session's
+   * selection through.
+   */
+  function clientContext(registered: string[]): unknown {
+    const slots = {
+      inject: (key: string, cb: () => () => void): void => {
+        registered.push(`inject:${key}`)
+        const disposer = cb()
+        void disposer
+      },
+      register: (opts: { name: string }, component: unknown): () => void => {
+        registered.push(`register:${opts.name}`)
+        void component
+        return () => {}
+      },
+    }
+    return {
       effect: (fn: () => () => void): () => void => { const d = fn(); return d },
       locale: {
         register: (namespace: string): void => { registered.push(`locale:${namespace}`) },
         bind: (namespace: string): (key: string) => string => (key: string): string => `${namespace}:${key}`,
       },
-      slots: {
-        inject: (key: string, cb: () => () => void): void => {
-          registered.push(`inject:${key}`)
-          const disposer = cb()
-          void disposer
-        },
-        register: (opts: { name: string }, component: unknown): () => void => {
-          registered.push(`register:${opts.name}`)
-          return () => {}
-        },
+      slots,
+      // `ctx.inject(['modelDirectories'], …)` runs the callback once the service
+      // is present; the fake provides it immediately.
+      inject: (deps: string[], cb: (scope: unknown) => void): void => {
+        for (const dep of deps) registered.push(`service:${dep}`)
+        cb({ slots, modelDirectories: { directoryFor: () => ({ store: {} }) } })
       },
     }
-    apply(ctx as never)
+  }
+
+  it('registers the locale namespace and all three slots it contributes to', () => {
+    const registered: string[] = []
+    apply(clientContext(registered) as never)
 
     expect(registered).toContain('locale:settings.astudio')
     expect(registered).toContain('inject:plugins.bundle.config')
     expect(registered).toContain('inject:settings.plugin.item')
     expect(registered).toContain('register:plugins.bundle.config')
     expect(registered).toContain('register:settings.plugin.item')
+    // The composer badge: beside the model selector, gated on the session's
+    // selected provider.
+    expect(registered).toContain('service:modelDirectories')
+    expect(registered).toContain('inject:conversation.input.right')
+    expect(registered).toContain('register:conversation.input.right')
   })
 
   it('exports the bundle name used as the config-page key', () => {

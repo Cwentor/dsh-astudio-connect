@@ -94,6 +94,13 @@ describe('createAStudioAuth', () => {
     store.invalidate()
     expect(store.resolve()).toBeUndefined() // re-reads, finds nothing
   })
+
+  it('reports the astron-session.json it reads alongside the resolved config', () => {
+    // The points badge reads the account cookie from that same file, so the
+    // store has to name it without the caller re-deriving AStudio's layout.
+    const store = createAStudioAuth({ configPath: testFile })
+    expect(store.sessionPath()).toMatch(/userdata[\\/]astron-session\.json$/u)
+  })
 })
 
 describe('auth status and logout', () => {

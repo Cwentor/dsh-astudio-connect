@@ -29,6 +29,15 @@ export const ASTRO_PROBE_PATH = '/astudio/probe'
  */
 export const ASTRO_UPDATE_PATH = '/astudio/update'
 
+/**
+ * Same-origin route backing the composer's points badge.
+ *
+ * Read-only like the status route, so the same loopback Host/Origin gate
+ * applies. It answers the two credit pools the AStudio account holds and a
+ * named failure state — never the session credential it reads them with.
+ */
+export const ASTRO_POINTS_PATH = '/astudio/points'
+
 /** Sign-in section of the status document. */
 export interface AStudioWebAuth {
   state: 'signed-in' | 'signed-out'
@@ -71,3 +80,27 @@ export interface AStudioWebStatus {
    */
   probeKey?: string
 }
+
+/**
+ * One credit pool, as the badge renders it.
+ *
+ * Kept here rather than in `points.ts` because that module reads the session
+ * file and therefore imports `node:fs`; the browser half may only import this
+ * Node-free module.
+ */
+export interface AStudioWebPointsPool {
+  /** Credit still available. */
+  remaining: number
+  /** Credit the pool started this cycle with. */
+  total?: number
+}
+
+/** What the points route serves: two pools, or one named failure state. */
+export type AStudioWebPoints =
+  | { status: 'ok', general: AStudioWebPointsPool, spark?: AStudioWebPointsPool }
+  /** No `ssoSessionId` in the session file: AStudio was never signed in here. */
+  | { status: 'signed-out' }
+  /** The session exists but the account service rejected it. */
+  | { status: 'expired' }
+  /** The service could not be read, or answered something unrecognised. */
+  | { status: 'unavailable' }
