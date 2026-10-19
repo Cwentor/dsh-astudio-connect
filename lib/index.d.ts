@@ -161,6 +161,14 @@ declare function readTokenFromConfig(configPath: string): AStudioCredential;
 declare function createAStudioAuth(options?: AStudioAuthOptions): {
   resolve(): AStudioCredential;
   modelBearerToken(): AStudioCredential;
+  /**
+   * The `astron-session.json` this store reads its credentials from.
+   *
+   * The points client reads the account's `ssoSessionId` from the same file,
+   * so it is resolved here — where AStudio's layout is already known — rather
+   * than re-derived by the caller.
+   */
+  sessionPath(): string;
   invalidate(): void;
   status(): Promise<AStudioAuthStatus>;
   logout(): Promise<void>;
@@ -219,6 +227,90 @@ interface AStudioAdapter {
  * ephemeral port applies from the first snapshot after startup.
  */
 declare function createAStudioAdapter(options: AStudioAdapterOptions): AStudioAdapter;
+//#endregion
+//#region src/status-paths.d.ts
+/**
+ * One credit pool, as the badge renders it.
+ *
+ * Kept here rather than in `points.ts` because that module reads the session
+ * file and therefore imports `node:fs`; the browser half may only import this
+ * Node-free module.
+ */
+interface AStudioWebPointsPool {
+  /** Credit still available. */
+  remaining: number;
+  /** Credit the pool started this cycle with. */
+  total?: number;
+}
+/** What the points route serves: two pools, or one named failure state. */
+type AStudioWebPoints = {
+  status: 'ok';
+  general: AStudioWebPointsPool;
+  spark?: AStudioWebPointsPool;
+} |
+/** No `ssoSessionId` in the session file: AStudio was never signed in here. */
+{
+  status: 'signed-out';
+} |
+/** The session exists but the account service rejected it. */
+{
+  status: 'expired';
+} |
+/** The service could not be read, or answered something unrecognised. */
+{
+  status: 'unavailable';
+};
+//#endregion
+//#region src/points.d.ts
+/** A read the badge can present. */
+type AStudioPointsResult = AStudioWebPoints;
+/** Options for {@link createAStudioPointsClient}. */
+interface AStudioPointsClientOptions {
+  /** The `astron-session.json` to read. */
+  sessionPath: string;
+  /** Injected for tests. */
+  fetchImpl?: typeof fetch;
+  /** Injected clock, for TTL tests. */
+  now?: () => number;
+  /** Per-read timeout. */
+  timeoutMs?: number;
+}
+/** What the plugin and route consume. */
+interface AStudioPointsClient {
+  /**
+   * Read the balance.
+   *
+   * `fresh` bypasses the TTL cache — the badge's ↻ uses it so a manual click
+   * always reaches upstream.
+   */
+  read(options?: {
+    fresh?: boolean;
+  }): Promise<AStudioPointsResult>;
+}
+/**
+ * Read the `ssoSessionId` from an AStudio session file.
+ *
+ * Returns undefined for a missing file, malformed JSON, an absent field, or a
+ * blank value — all of which mean "not signed in", a normal state the badge
+ * hides rather than an error it reports.
+ */
+declare function readSsoSessionId(sessionPath: string): string | undefined;
+/**
+ * Parse the account service's balance envelope.
+ *
+ * The envelope is the legacy Astron shape — `{ flag, code, desc, data }` — and a
+ * dead session is answered with HTTP 200 plus `code: 80000`, which is why the
+ * status has to be read from the body as well as the HTTP status.
+ */
+declare function parseAStudioPointsBalance(payload: unknown): AStudioPointsResult;
+/**
+ * Create the balance client.
+ *
+ * The session file is re-read on every upstream call rather than cached: when
+ * AStudio is signed in again it rewrites that file with a new `ssoSessionId`, and
+ * a cached credential would keep the badge pinned to an expired session.
+ */
+declare function createAStudioPointsClient(options: AStudioPointsClientOptions): AStudioPointsClient;
 //#endregion
 //#region src/index.d.ts
 /**
@@ -287,4 +379,4 @@ declare const plugin: {
   apply: typeof apply;
 };
 //#endregion
-export { ASTRO_PROVIDER, ASTRO_SETTINGS_NS, ASTRO_STREAM_IDLE_TIMEOUT_MS, type AStudioShim, Config, DEFAULT_CATALOG, DEFAULT_UPSTREAM_URL, apply, createAStudioAdapter, createAStudioAuth, createAStudioCatalog, createAStudioShim, createAStudioUpstream, plugin as default, inject, readTokenFromConfig };
+export { ASTRO_PROVIDER, ASTRO_SETTINGS_NS, ASTRO_STREAM_IDLE_TIMEOUT_MS, type AStudioShim, Config, DEFAULT_CATALOG, DEFAULT_UPSTREAM_URL, apply, createAStudioAdapter, createAStudioAuth, createAStudioCatalog, createAStudioPointsClient, createAStudioShim, createAStudioUpstream, plugin as default, inject, parseAStudioPointsBalance, readSsoSessionId, readTokenFromConfig };
