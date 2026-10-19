@@ -48,14 +48,31 @@ DSH (llm seam) → AStudioPiAiAdapter → 127.0.0.1 shim → maas-api (Bearer to
 | 字段 | 说明 |
 |------|------|
 | `displayName` | 模型选择器中显示的 provider 名称（默认 `AStudio`） |
-| `configPath` | 自定义 AStudio `config.toml` 路径（默认使用 AStudio 自身位置） |
+| `configPath` | 自定义 AStudio `config.toml` 路径 |
+
+## 位置发现（Windows）
+
+插件不再假设 AStudio 装在固定路径，按以下顺序自动定位数据目录：
+
+1. `configPath` 设置里显式指定的路径（直接采用，不探测）
+2. 环境变量 `ASTUDIO_DATA_HOME`
+3. AStudio 自己的注册表登记：`HKCU\Software\AStudioStorage` 的 `ProductionDataRoot` / `ProductionAcodeHome`
+4. 安装目录同级的 `<安装目录名> Data`
+
+第 3 项是 AStudio 官方自己写入的登记，因此换盘、换安装位置后无需任何配置。注册表记录存在但不完整或版本不受支持时会明确报错，不会静默降级成"未连接"。
 
 ## 模型目录
 
-插件启动时从 maas-api 的 `GET /v1/models` 刷新模型列表，以本地缓存为准，刷新为增量更新。当前支持：
+模型清单与上下文参数来自 AStudio 的 **model-manager** 接口（`GET /api/v1/model-manager/models`），这也是 AStudio 界面本身渲染的那份文档。认证使用 `astron-session.json` 里的 `modelBearerToken`（与聊天用的 `experimental_bearer_token` 是两套凭据）。
 
-- 推理模型：spark-x2.5、spark-x2.6-preview（支持 low / high / max 推理强度）
+> 不使用 `/v1/models`：那是 OpenAI 兼容的发现端点，只返回一个更小、更旧的子集，会漏掉实际可调用的模型。
+
+上下文窗口与最大输出取自上游真实值（例如 `spark-x2.6-preview` 为 262144 / 100000）。当前覆盖：
+
+- 推理模型：spark-x2.5、spark-x2.6-preview（可切换思考，支持 high / max）
 - 对话模型：spark-x2.5-4b、xopglm52、xopdeepseekv4pro、xopdeepseekv4pro0813、xopdsv4flash0731in、astronclaw-auto
+
+降级顺序：实时目录 → 上次成功快照 → 内置清单。
 
 ## 安全说明
 

@@ -86,6 +86,24 @@ describe('adapter model metadata', () => {
     expect(reasoningFields({ id: 'y', name: 'Y', supportsImages: false, reasoning: { supports: true }, contextWindow: 1, maxTokens: 1 }).reasoning).toBe(false)
   })
 
+  it('maps a switchable model to an off level when canDisableThinking is set', () => {
+    // AStudio declares "none" for switchable models, which the catalog layer
+    // turns into canDisableThinking; the level map must expose it as `off`.
+    const info = {
+      id: 'spark-x2.6-preview',
+      name: 'Spark-X2.6-Preview',
+      supportsImages: false,
+      reasoning: { supports: true, supportedEfforts: ['high'], canDisableThinking: true },
+      contextWindow: 262144,
+      maxTokens: 100000,
+    }
+    const { reasoning, thinkingLevelMap } = reasoningFields(info)
+    expect(reasoning).toBe(true)
+    expect(thinkingLevelMap?.off).toBe('off')
+    expect(thinkingLevelMap?.high).toBe('high')
+    expect(thinkingLevelMap?.max).toBeNull()
+  })
+
   it('sets image input only when the catalog declares supportsImages', () => {
     const image = toPiModel({ id: 'img', name: 'Img', supportsImages: true, contextWindow: 1000, maxTokens: 100 }, 'http://127.0.0.1:1/v1', 'astudio')
     const text = toPiModel({ id: 'txt', name: 'Txt', supportsImages: false, contextWindow: 1000, maxTokens: 100 }, 'http://127.0.0.1:1/v1', 'astudio')

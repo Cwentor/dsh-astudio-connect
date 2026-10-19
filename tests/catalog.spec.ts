@@ -12,19 +12,27 @@ let port: number
 let catalogDir: string
 let catalogPath: string
 
+/**
+ * The endpoint under test is the model-manager document, which is what the
+ * AStudio UI renders and the only source that carries real budgets. Its
+ * payload shape is `{ code, message, data: { models: [...] } }`.
+ */
 function startServer(): Promise<number> {
   return new Promise((resolve) => {
     server = createServer((req, res) => {
       const url = req.url ?? ''
-      if (url === '/v1/models') {
+      if (url === '/models') {
         res.writeHead(200, { 'Content-Type': 'application/json' })
         res.end(JSON.stringify({
-          object: 'list',
-          data: [
-            { id: 'spark-x2.5', object: 'model', created: 0, owned_by: 'xunfei' },
-            { id: 'xopglm52', object: 'model', created: 0, owned_by: 'xunfei' },
-            { id: 'new-model-123', object: 'model', created: 0, owned_by: 'xunfei' },
-          ],
+          code: 0,
+          message: 'success',
+          data: {
+            models: [
+              { slug: 'spark-x2.5', display_name: 'Spark-X2.5', context_window: 262144, max_output_tokens: 100000 },
+              { slug: 'xopglm52', display_name: 'GLM-5.2', context_window: 1048576, max_output_tokens: 100000 },
+              { slug: 'new-model-123', display_name: 'New Model', context_window: 65536, max_output_tokens: 8192 },
+            ],
+          },
         }))
         return
       }
@@ -51,11 +59,12 @@ afterAll(async () => {
   await new Promise<void>((resolve) => server.close(() => resolve()))
 })
 
-function createCatalog(token = 'token') {
+function createCatalog(token = 'token', modelToken: string | undefined = 'model-token') {
   return createAStudioCatalog({
     upstream: { chat: async () => { throw new Error('not used') } },
     token: () => token,
-    baseUrl: `http://127.0.0.1:${port}/v1`,
+    modelBearerToken: () => modelToken,
+    modelManagerBaseUrl: `http://127.0.0.1:${port}`,
     catalogPath,
   })
 }
@@ -64,7 +73,7 @@ function createNoTokenCatalog() {
   return createAStudioCatalog({
     upstream: { chat: async () => { throw new Error('not used') } },
     token: () => undefined,
-    baseUrl: `http://127.0.0.1:${port}/v1`,
+    modelManagerBaseUrl: `http://127.0.0.1:${port}`,
     catalogPath,
   })
 }
@@ -79,16 +88,35 @@ describe('createAStudioCatalog', () => {
     expect(catalog.fetchedAtMs()).toBeUndefined()
   })
 
-  it('refresh loads models from upstream /v1/models and records live source', async () => {
+  it('refresh loads the roster from the model-manager document', async () => {
     const catalog = createCatalog()
     await catalog.refresh()
     const models = catalog.current()
     expect(models.some(m => m.id === 'spark-x2.5')).toBe(true)
     expect(models.some(m => m.id === 'xopglm52')).toBe(true)
     expect(models.some(m => m.id === 'new-model-123')).toBe(true)
-    expect(models.some(m => m.id === 'spark-x2.6-preview')).toBe(false)
     expect(catalog.source()).toBe('live')
     expect(catalog.fetchedAtMs()).toBeDefined()
+  })
+
+  it('keeps the built-in roster rather than dropping models the document omits', async () => {
+    const catalog = createCatalog()
+    await catalog.refresh()
+    // The live document only lists three models; the rest of the compiled-in
+    // roster must survive, because a missing row there does not mean the model
+    // is uncallable. The one live-only id is appended, so the total is the
+    // built-in roster plus that id.
+    expect(catalog.current().length).toBe(DEFAULT_CATALOG.length + 1)
+    expect(catalog.current().some(m => m.id === 'spark-x2.6-preview')).toBe(true)
+    expect(catalog.current().some(m => m.id === 'astronclaw-auto')).toBe(true)
+  })
+
+  it('takes budgets from the live document', async () => {
+    const catalog = createCatalog()
+    await catalog.refresh()
+    const newModel = catalog.current().find(m => m.id === 'new-model-123')
+    expect(newModel?.contextWindow).toBe(65536)
+    expect(newModel?.maxTokens).toBe(8192)
   })
 
   it('refresh keeps cached data on failure and no token', async () => {
@@ -120,7 +148,8 @@ describe('createAStudioCatalog', () => {
     const failing = createAStudioCatalog({
       upstream: { chat: async () => { throw new Error('not used') } },
       token: () => 'token',
-      baseUrl: 'http://127.0.0.1:1/v1',
+      modelBearerToken: () => 'model-token',
+      modelManagerBaseUrl: 'http://127.0.0.1:1',
       catalogPath,
     })
     await failing.refresh()
@@ -138,7 +167,8 @@ describe('createAStudioCatalog', () => {
     const failing = createAStudioCatalog({
       upstream: { chat: async () => { throw new Error('not used') } },
       token: () => 'token',
-      baseUrl: 'http://127.0.0.1:1/v1',
+      modelBearerToken: () => 'model-token',
+      modelManagerBaseUrl: 'http://127.0.0.1:1',
       catalogPath,
     })
     await failing.refresh()
@@ -146,13 +176,11 @@ describe('createAStudioCatalog', () => {
     expect(failing.source()).toBe('fallback')
   })
 
-  it('refresh filters to upstream models and adds unknown ones', async () => {
+  it('refresh merges live models over the built-in roster in order', async () => {
     const catalog = createCatalog()
     await catalog.refresh()
-    const models = catalog.current()
-    expect(models.length).toBe(3)
-    const ids = models.map(m => m.id)
-    expect(ids).toContain('spark-x2.5')
+    const ids = catalog.current().map(m => m.id)
+    expect(ids[0]).toBe('spark-x2.5')
     expect(ids).toContain('xopglm52')
     expect(ids).toContain('new-model-123')
   })

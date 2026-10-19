@@ -63,15 +63,19 @@ export interface AStudioAdapter {
 
 /**
  * Build the thinking-level map for a reasoning model.
- * maas-api reasoning models support low/high/max.
+ *
+ * The catalog records switchability as `canDisableThinking` (AStudio declares
+ * the switchable state as an effort named "none", which the catalog layer
+ * translates rather than passing through as an effort value).
  */
 export function reasoningFields(info: AStudioModelInfo): { reasoning: boolean; thinkingLevelMap?: ThinkingLevelMap } {
   const reasoning = info.reasoning
   if (reasoning === undefined || reasoning.supports !== true) return { reasoning: false }
   const efforts = reasoning.supportedEfforts
   if (efforts === undefined || efforts.length === 0) return { reasoning: false }
+  const canDisable = reasoning.canDisableThinking === true
   const map: Record<ModelThinkingLevel, string | null> = {
-    off: efforts.includes('off') && reasoning.canDisableThinking === true ? 'off' : null,
+    off: canDisable || efforts.includes('off') ? 'off' : null,
     minimal: null,
     low: efforts.includes('low') ? 'low' : null,
     medium: efforts.includes('medium') ? 'medium' : null,

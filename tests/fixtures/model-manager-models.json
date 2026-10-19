@@ -1,0 +1,419 @@
+{
+  "code": 0,
+  "message": "success",
+  "traceId": "288c2eb69fe85cb2350f1b5ee609c648",
+  "data": {
+    "models": [
+      {
+        "slug": "xopglm52",
+        "upgrade": null,
+        "priority": 5,
+        "comp_hash": null,
+        "tool_mode": null,
+        "shell_type": "unified_exec",
+        "visibility": "list",
+        "description": "GLM-5.2 文本模型。",
+        "display_name": "GLM-5.2",
+        "service_tiers": [],
+        "context_window": 1048576,
+        "availability_nux": null,
+        "input_modalities": [
+          "text"
+        ],
+        "supported_in_api": true,
+        "default_verbosity": null,
+        "max_output_tokens": 100000,
+        "support_verbosity": true,
+        "truncation_policy": {
+          "mode": "tokens",
+          "limit": 10000
+        },
+        "max_context_window": 1048576,
+        "use_responses_lite": false,
+        "multi_agent_version": null,
+        "default_service_tier": null,
+        "supports_search_tool": true,
+        "web_search_tool_type": "text",
+        "apply_patch_tool_type": null,
+        "additional_speed_tiers": [],
+        "default_reasoning_level": "high",
+        "auto_compact_token_limit": 900000,
+        "default_reasoning_summary": "none",
+        "auto_review_model_override": null,
+        "supported_reasoning_levels": [
+          {
+            "effort": "none",
+            "description": "关闭思考"
+          },
+          {
+            "effort": "high",
+            "description": "高强度思考"
+          },
+          {
+            "effort": "max",
+            "description": "最大强度思考"
+          }
+        ],
+        "experimental_supported_tools": [],
+        "supports_parallel_tool_calls": true,
+        "supports_reasoning_summaries": true,
+        "supports_image_detail_original": true,
+        "effective_context_window_percent": 95,
+        "include_skills_usage_instructions": false
+      },
+      {
+        "slug": "astronclaw-auto",
+        "upgrade": null,
+        "priority": 1,
+        "comp_hash": null,
+        "tool_mode": null,
+        "shell_type": "unified_exec",
+        "visibility": "list",
+        "description": "Auto 文本模型。",
+        "display_name": "Auto",
+        "service_tiers": [],
+        "context_window": 1048576,
+        "availability_nux": null,
+        "input_modalities": [
+          "text"
+        ],
+        "supported_in_api": true,
+        "default_verbosity": null,
+        "max_output_tokens": 100000,
+        "support_verbosity": true,
+        "truncation_policy": {
+          "mode": "tokens",
+          "limit": 10000
+        },
+        "max_context_window": 1048576,
+        "use_responses_lite": false,
+        "multi_agent_version": null,
+        "default_service_tier": null,
+        "supports_search_tool": true,
+        "web_search_tool_type": "text",
+        "apply_patch_tool_type": null,
+        "additional_speed_tiers": [],
+        "default_reasoning_level": "high",
+        "auto_compact_token_limit": 900000,
+        "default_reasoning_summary": "none",
+        "auto_review_model_override": null,
+        "supported_reasoning_levels": [
+          {
+            "effort": "none",
+            "description": "关闭思考"
+          },
+          {
+            "effort": "high",
+            "description": "开启思考"
+          }
+        ],
+        "experimental_supported_tools": [],
+        "supports_parallel_tool_calls": true,
+        "supports_reasoning_summaries": true,
+        "supports_image_detail_original": true,
+        "effective_context_window_percent": 95,
+        "include_skills_usage_instructions": false
+      },
+      {
+        "slug": "spark-x2.5",
+        "upgrade": null,
+        "priority": 3,
+        "comp_hash": null,
+        "tool_mode": null,
+        "shell_type": "unified_exec",
+        "visibility": "list",
+        "description": "Spark-X2.5 文本模型。",
+        "display_name": "Spark-X2.5",
+        "service_tiers": [],
+        "context_window": 262144,
+        "reasoning_loop": {
+          "enabled": true,
+          "tail_chars": 4000,
+          "max_retries": 5,
+          "window_chars": 32000,
+          "fragment_chars": 100,
+          "min_occurrences": 5,
+          "consecutive_hits": 3,
+          "coverage_percent": 80,
+          "check_interval_chars": 2000
+        },
+        "availability_nux": null,
+        "input_modalities": [
+          "text"
+        ],
+        "supported_in_api": true,
+        "default_verbosity": null,
+        "max_output_tokens": 100000,
+        "support_verbosity": true,
+        "truncation_policy": {
+          "mode": "tokens",
+          "limit": 10000
+        },
+        "max_context_window": 262144,
+        "use_responses_lite": false,
+        "multi_agent_version": null,
+        "default_service_tier": null,
+        "supports_search_tool": true,
+        "web_search_tool_type": "text",
+        "apply_patch_tool_type": null,
+        "additional_speed_tiers": [],
+        "default_reasoning_level": "high",
+        "auto_compact_token_limit": 170000,
+        "default_reasoning_summary": "none",
+        "auto_review_model_override": null,
+        "supported_reasoning_levels": [
+          {
+            "effort": "none",
+            "description": "关闭思考"
+          },
+          {
+            "effort": "high",
+            "description": "开启思考"
+          }
+        ],
+        "experimental_supported_tools": [],
+        "supports_parallel_tool_calls": true,
+        "supports_reasoning_summaries": true,
+        "supports_image_detail_original": true,
+        "effective_context_window_percent": 95,
+        "include_skills_usage_instructions": false
+      },
+      {
+        "slug": "spark-x2.5-4b",
+        "badge": {
+          "text": {
+            "en": "Free",
+            "zh-CN": "限免"
+          }
+        },
+        "upgrade": null,
+        "priority": 4,
+        "comp_hash": null,
+        "tool_mode": null,
+        "shell_type": "unified_exec",
+        "visibility": "list",
+        "description": "Spark-X2.5-Lite 文本模型。",
+        "display_name": "Spark-X2.5-Lite",
+        "service_tiers": [],
+        "context_window": 1048576,
+        "availability_nux": null,
+        "input_modalities": [
+          "text"
+        ],
+        "supported_in_api": true,
+        "default_verbosity": null,
+        "max_output_tokens": 110000,
+        "support_verbosity": true,
+        "truncation_policy": {
+          "mode": "tokens",
+          "limit": 10000
+        },
+        "max_context_window": 1048576,
+        "use_responses_lite": false,
+        "multi_agent_version": null,
+        "default_service_tier": null,
+        "supports_search_tool": true,
+        "web_search_tool_type": "text",
+        "apply_patch_tool_type": null,
+        "additional_speed_tiers": [],
+        "default_reasoning_level": "high",
+        "auto_compact_token_limit": 900000,
+        "default_reasoning_summary": "none",
+        "auto_review_model_override": null,
+        "supported_reasoning_levels": [
+          {
+            "effort": "none",
+            "description": "关闭思考"
+          },
+          {
+            "effort": "high",
+            "description": "高强度思考"
+          },
+          {
+            "effort": "max",
+            "description": "最大强度思考"
+          }
+        ],
+        "experimental_supported_tools": [],
+        "supports_parallel_tool_calls": true,
+        "supports_reasoning_summaries": true,
+        "supports_image_detail_original": true,
+        "effective_context_window_percent": 95,
+        "include_skills_usage_instructions": false
+      },
+      {
+        "slug": "xopdsv4flash0731in",
+        "upgrade": null,
+        "priority": 11,
+        "comp_hash": null,
+        "tool_mode": null,
+        "shell_type": "unified_exec",
+        "visibility": "list",
+        "description": "DeepSeek-V4-Flash 文本模型。",
+        "display_name": "DeepSeek-V4-Flash",
+        "service_tiers": [],
+        "context_window": 1048576,
+        "availability_nux": null,
+        "input_modalities": [
+          "text"
+        ],
+        "supported_in_api": true,
+        "default_verbosity": null,
+        "max_output_tokens": 100000,
+        "support_verbosity": true,
+        "truncation_policy": {
+          "mode": "tokens",
+          "limit": 10000
+        },
+        "max_context_window": 1048576,
+        "use_responses_lite": false,
+        "multi_agent_version": null,
+        "default_service_tier": null,
+        "supports_search_tool": true,
+        "web_search_tool_type": "text",
+        "apply_patch_tool_type": null,
+        "additional_speed_tiers": [],
+        "default_reasoning_level": "high",
+        "auto_compact_token_limit": 900000,
+        "default_reasoning_summary": "none",
+        "auto_review_model_override": null,
+        "supported_reasoning_levels": [
+          {
+            "effort": "none",
+            "description": "关闭思考"
+          },
+          {
+            "effort": "high",
+            "description": "高强度思考"
+          },
+          {
+            "effort": "max",
+            "description": "最大强度思考"
+          }
+        ],
+        "experimental_supported_tools": [],
+        "supports_parallel_tool_calls": true,
+        "supports_reasoning_summaries": true,
+        "supports_image_detail_original": true,
+        "effective_context_window_percent": 95,
+        "include_skills_usage_instructions": false
+      },
+      {
+        "slug": "xopdeepseekv4pro0813",
+        "upgrade": null,
+        "priority": 9,
+        "comp_hash": null,
+        "tool_mode": null,
+        "shell_type": "unified_exec",
+        "visibility": "list",
+        "description": "DeepSeek-V4-Pro 文本模型。",
+        "display_name": "DeepSeek-V4-Pro",
+        "service_tiers": [],
+        "context_window": 1048576,
+        "availability_nux": null,
+        "input_modalities": [
+          "text"
+        ],
+        "supported_in_api": true,
+        "default_verbosity": null,
+        "max_output_tokens": 100000,
+        "support_verbosity": true,
+        "truncation_policy": {
+          "mode": "tokens",
+          "limit": 10000
+        },
+        "max_context_window": 1048576,
+        "use_responses_lite": false,
+        "multi_agent_version": null,
+        "default_service_tier": null,
+        "supports_search_tool": true,
+        "web_search_tool_type": "text",
+        "apply_patch_tool_type": null,
+        "additional_speed_tiers": [],
+        "default_reasoning_level": "high",
+        "auto_compact_token_limit": 900000,
+        "default_reasoning_summary": "none",
+        "auto_review_model_override": null,
+        "supported_reasoning_levels": [
+          {
+            "effort": "none",
+            "description": "关闭思考"
+          },
+          {
+            "effort": "high",
+            "description": "高强度思考"
+          },
+          {
+            "effort": "max",
+            "description": "最大强度思考"
+          }
+        ],
+        "experimental_supported_tools": [],
+        "supports_parallel_tool_calls": true,
+        "supports_reasoning_summaries": true,
+        "supports_image_detail_original": true,
+        "effective_context_window_percent": 95,
+        "include_skills_usage_instructions": false
+      },
+      {
+        "slug": "spark-x2.6-preview",
+        "badge": {
+          "text": {
+            "en": "Preview",
+            "zh-CN": "抢先体验"
+          }
+        },
+        "upgrade": null,
+        "priority": 2,
+        "comp_hash": null,
+        "tool_mode": null,
+        "shell_type": "unified_exec",
+        "visibility": "list",
+        "description": "Spark-X2.6-Preview 文本模型。",
+        "display_name": "Spark-X2.6-Preview",
+        "service_tiers": [],
+        "context_window": 262144,
+        "availability_nux": null,
+        "input_modalities": [
+          "text"
+        ],
+        "supported_in_api": true,
+        "default_verbosity": null,
+        "max_output_tokens": 100000,
+        "support_verbosity": true,
+        "truncation_policy": {
+          "mode": "tokens",
+          "limit": 10000
+        },
+        "max_context_window": 262144,
+        "use_responses_lite": false,
+        "multi_agent_version": null,
+        "default_service_tier": null,
+        "supports_search_tool": true,
+        "web_search_tool_type": "text",
+        "apply_patch_tool_type": null,
+        "additional_speed_tiers": [],
+        "default_reasoning_level": "high",
+        "auto_compact_token_limit": 170000,
+        "default_reasoning_summary": "none",
+        "auto_review_model_override": null,
+        "supported_reasoning_levels": [
+          {
+            "effort": "none",
+            "description": "关闭思考"
+          },
+          {
+            "effort": "high",
+            "description": "开启思考"
+          }
+        ],
+        "experimental_supported_tools": [],
+        "supports_parallel_tool_calls": true,
+        "supports_reasoning_summaries": true,
+        "supports_image_detail_original": true,
+        "effective_context_window_percent": 95,
+        "include_skills_usage_instructions": false
+      }
+    ]
+  }
+}

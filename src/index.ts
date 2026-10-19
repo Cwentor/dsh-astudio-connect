@@ -107,6 +107,7 @@ export function apply(ctx: Context, config: Config): void {
   const catalog = createAStudioCatalog({
     upstream,
     token: () => store.resolve(),
+    modelBearerToken: () => store.modelBearerToken(),
     visibility,
   })
   const probeStore = createAStudioProbeStore()

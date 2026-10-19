@@ -38,7 +38,7 @@ describe('catalog visibility', () => {
     const catalog = createAStudioCatalog({
       upstream: { chat: async () => { throw new Error('not used') } },
       token: () => 'token',
-      baseUrl: 'http://127.0.0.1:1/v1',
+      modelManagerBaseUrl: 'http://127.0.0.1:1',
       catalogPath,
       identity: 'astudio-local',
       visibility: store,
@@ -72,7 +72,7 @@ describe('shim visibility filtering', () => {
     const catalog = createAStudioCatalog({
       upstream: { chat: async () => { throw new Error('not used') } },
       token: () => 'token',
-      baseUrl: 'http://127.0.0.1:1/v1',
+      modelManagerBaseUrl: 'http://127.0.0.1:1',
       catalogPath,
       identity: 'astudio-local',
       visibility,

@@ -59,6 +59,7 @@ function makeCatalog(store: ReturnType<typeof makeStore>) {
   return createAStudioCatalog({
     upstream: { chat: async () => { throw new Error('not used') } },
     token: () => store.resolve(),
+    modelBearerToken: () => store.modelBearerToken(),
   })
 }
 
@@ -75,9 +76,15 @@ async function doctor(jsonOutput: boolean, options: RunOptions): Promise<number>
       path: status.configPath,
       present: configPresent,
     },
+    modelCatalog: {
+      // Without this token the plugin still works, but it serves the built-in
+      // roster instead of the live document, so the doctor names it.
+      hasModelToken: status.hasModelToken === true,
+    },
     hints: [
       ...status.state === 'signed-out' ? ['Sign in once in the AStudio desktop app, then run status again.'] : [],
       ...configPresent ? [] : [`No AStudio config.toml at ${status.configPath}.`],
+      ...status.hints,
     ],
   }
   if (jsonOutput) {
@@ -87,6 +94,7 @@ async function doctor(jsonOutput: boolean, options: RunOptions): Promise<number>
       `AStudio Connect on ${process.version}`,
       `Config file: ${configPresent ? 'present' : 'missing'} — ${status.configPath}`,
       `Sign-in state: ${report.signIn}`,
+      `Model catalog token: ${report.modelCatalog.hasModelToken ? 'present' : 'missing (built-in roster)'}`,
       ...report.hints.map(hint => `Hint: ${hint}`),
       '',
     ].join('\n'))

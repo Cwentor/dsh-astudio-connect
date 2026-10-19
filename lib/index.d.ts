@@ -87,8 +87,13 @@ interface AStudioCatalog {
 interface AStudioCatalogOptions {
   upstream: AStudioUpstreamClient;
   token: () => string | undefined;
-  /** Override the base URL for /v1/models (used by tests). */
-  baseUrl?: string;
+  /**
+   * Resolve the model-manager credential. AStudio issues this separately from
+   * the chat token (it lands in `astron-session.json` as `modelBearerToken`).
+   */
+  modelBearerToken?: () => string | undefined;
+  /** Override the model-manager API base (used by tests). */
+  modelManagerBaseUrl?: string;
   /** Override the identity used for catalog persistence. */
   identity?: string;
   /** Override the catalog snapshot path. */
@@ -105,27 +110,43 @@ declare const DEFAULT_CATALOG: readonly AStudioModelInfo[];
 declare function createAStudioCatalog(options: AStudioCatalogOptions): AStudioCatalog;
 //#endregion
 //#region src/auth.d.ts
+/**
+ * AStudio credential store. Reads the chat bearer token from the AStudio
+ * runtime config.toml and the model-manager token from astron-session.json,
+ * caches both in memory, and never writes to disk.
+ *
+ * Both files live under one AStudio data root, discovered per platform rather
+ * than assumed at a fixed absolute path; see ./locations.ts.
+ *
+ * @module dsh-astudio-connect/auth
+ */
 /** What the shim and upstream need from a credential. */
 interface AStudioCredentialStore {
-  /** Resolve the current bearer token, or undefined when unavailable. */
+  /** Resolve the current chat bearer token, or undefined when unavailable. */
   resolve(): AStudioCredential;
+  /** Resolve the model-manager token, or undefined when unavailable. */
+  modelBearerToken?(): AStudioCredential;
 }
 /** Secret-free sign-in summary for status and doctor output. */
 interface AStudioAuthStatus {
   state: 'signed-in' | 'signed-out';
   configPath: string;
   tokenLength?: number;
+  /** Whether a model-manager token was also found. */
+  hasModelToken?: boolean;
   hints: string[];
 }
 /** The credential type — a bearer token string or undefined. */
 type AStudioCredential = string | undefined;
 /** Options for constructing the store. */
 interface AStudioAuthOptions {
-  /** Override the config path (used by tests). */
+  /** Override the config.toml path (used by tests and settings). */
   configPath?: string;
+  /** Override the whole AStudio data root (used by tests). */
+  dataHome?: string;
 }
 /**
- * Read the bearer token from config.toml.
+ * Read the chat bearer token from a config.toml.
  *
  * Returns undefined when the file is missing, the field is absent, or the
  * format is unexpected. Never throws — a missing credential is a normal state
@@ -133,15 +154,16 @@ interface AStudioAuthOptions {
  */
 declare function readTokenFromConfig(configPath: string): AStudioCredential;
 /**
- * Create a credential store that reads from config.toml and caches the result
- * in memory. The cache is populated once on the first `resolve()` call;
- * subsequent calls return the same value. Call `invalidate()` to force a re-read
- * (e.g. after the user re-logs in).
+ * Create a credential store that reads both AStudio files and caches the
+ * results in memory. Call `invalidate()` to force a re-read (e.g. after the
+ * user signs in again).
  */
-declare function createAStudioAuth(options?: AStudioAuthOptions): AStudioCredentialStore & {
-  invalidate: () => void;
-  status: () => Promise<AStudioAuthStatus>;
-  logout: () => Promise<void>;
+declare function createAStudioAuth(options?: AStudioAuthOptions): {
+  resolve(): AStudioCredential;
+  modelBearerToken(): AStudioCredential;
+  invalidate(): void;
+  status(): Promise<AStudioAuthStatus>;
+  logout(): Promise<void>;
 };
 //#endregion
 //#region src/shim.d.ts

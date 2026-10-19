@@ -100,7 +100,7 @@ beforeEach(async () => {
   const catalog = createAStudioCatalog({
     upstream,
     token: () => store.resolve(),
-    baseUrl: `http://127.0.0.1:${mockPort}/v1`,
+    modelManagerBaseUrl: `http://127.0.0.1:${mockPort}/v1`,
   })
   shim = createAStudioShim({ store, upstream, catalog })
   await shim.ready
@@ -163,7 +163,7 @@ describe('integration', () => {
     const catalog = createAStudioCatalog({
       upstream,
       token: () => store.resolve(),
-      baseUrl: `http://127.0.0.1:${mockPort}/v1`,
+      modelManagerBaseUrl: `http://127.0.0.1:${mockPort}/v1`,
     })
     const shim2 = createAStudioShim({ store, upstream, catalog })
     await shim2.ready
