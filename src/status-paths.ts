@@ -64,4 +64,10 @@ export interface AStudioWebStatus {
   catalog: AStudioWebCatalog
   visibility: AStudioWebVisibility
   probe: AStudioWebProbe
+  /**
+   * In-process key authorizing probe control writes. Handed to the browser half
+   * with the status document (the card is same-origin and already had to pass
+   * the loopback guard); it is never persisted and rotates per process.
+   */
+  probeKey?: string
 }

@@ -127,8 +127,13 @@ export function apply(ctx: Context, config: Config): void {
       void clearHostHeartbeat()
     }
 
+    // Mint the per-process probe key up front: the status card hands it to the
+    // browser half, which echoes it back as `x-astudio-probe-key` on probe
+    // control writes.
+    const probeKey = createAStudioProbeKey()
+
     // Register the status route on the host web server.
-    registerAStudioStatusRoute(ctx, { store, catalog, probe: probeStore })
+    registerAStudioStatusRoute(ctx, { store, catalog, probe: probeStore, probeKey })
 
     // Register the update route on the host web server.
     registerAStudioUpdateRoute(ctx, { currentVersion: ASTRO_VERSION })
@@ -139,7 +144,6 @@ export function apply(ctx: Context, config: Config): void {
       token: () => store.resolve(),
       store: probeStore,
     })
-    const probeKey = createAStudioProbeKey()
     registerAStudioProbeRoute(ctx, {
       service: probeService,
       invalidate: () => { void catalog.refresh().catch(() => {}) },
