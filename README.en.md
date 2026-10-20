@@ -312,13 +312,6 @@ The plugin declares host dependencies in two places, both pinned to seam package
 | Status | Version | Notes |
 |---|---|---|
 | **Supported** | DSH Desktop **2.0.17** (seam `0.2.0-rc.2`) | Current development and verification environment: provider registration, settings card and points badge all confirmed on a real machine |
-| **Not supported** | DSH **0.1.5** | Compatibility removed, see below |
-
-**About 0.1.5**: DSH 0.1.5 used `settings.plugin.item` (keyed, one card per namespace); 0.2.x switched to `plugins.bundle.config` (dispatching a whole bundle page by package name). The plugin **only registers `plugins.bundle.config`**, so no settings card renders on 0.1.5.
-
-Why compatibility was removed: no published package declares `settings.plugin.item` any more, and that registration path cannot be verified by any means other than compilation in the current dependency tree — keeping it would be dead code. 0.2.x hosts are unaffected (that slot never fires there).
-
-> If you still need 0.1.5, re-add that seam's SlotMap mirror and registration in `src/client/index.tsx`, verify on a real 0.1.5 host, then declare support.
 
 ### pi-ai version constraint
 

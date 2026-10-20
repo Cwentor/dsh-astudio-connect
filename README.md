@@ -313,13 +313,6 @@ AStudio 的 token 不携带稳定 uid，因此本插件只有一个本地身份 
 | 状态 | 版本 | 说明 |
 |---|---|---|
 | **支持** | DSH Desktop **2.0.17**（seam `0.2.0-rc.2`） | 当前开发与验证环境：provider 注册、设置卡片、积分徽标均在实机确认 |
-| **不支持** | DSH **0.1.5** | 已移除兼容，见下 |
-
-**关于 0.1.5**：DSH 0.1.5 用 `settings.plugin.item`（键控，一个 namespace 一张卡），0.2.x 改用 `plugins.bundle.config`（按包名分发一整个 bundle 页）。插件**只注册 `plugins.bundle.config`**，在 0.1.5 上不会渲染设置卡片。
-
-移除兼容的理由：`settings.plugin.item` 已无任何已发布包声明，那条注册路径在当前依赖树中无法被编译之外的任何方式验证——保留它只是死代码。0.2.x 宿主的行为不受影响（该槽位在 0.2.x 上从不会触发）。
-
-> 若仍需 0.1.5，请在 `src/client/index.tsx` 重新加入该 seam 的 SlotMap 镜像与注册，并在真实的 0.1.5 宿主上验证后再声明支持。
 
 ### pi-ai 版本约束
 
