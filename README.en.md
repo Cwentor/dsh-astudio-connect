@@ -333,6 +333,7 @@ At startup the plugin checks the actually-resolved copy with `pi-ai-guard.ts`; a
 ## Known Limitations
 
 - **Image input is not enabled yet**: the adapter already maps a model to `input: ['text', 'image']` based on the catalog declaration, but model-manager parsing currently hardcodes `supportsImages: false` (and the upstream document has no corresponding field), so every model accepts plain text only.
+- **The update check requires the package to be published on npm**: the version judgement reads npm's public dist-tags, so with the package unpublished that step 404s and the check is always "unavailable". The repository URL also once named a nonexistent org, making the GitHub release enrichment 404 as well; both are corrected in `src/version.ts` and `package.json`'s `repository`. The enrichment path only takes effect once the package is published.
 - **Automatic location discovery is implemented only on Windows**: macOS / Linux need `ASTUDIO_DATA_HOME` set explicitly.
 - **A single local identity**: AStudio's token carries no stable uid, so catalog snapshots, visibility preferences and probe records all hang off `astudio-local`, with no multi-account isolation.
 - **No per-transaction billing detail**: the account endpoint only provides aggregate balances, so the badge can only reflect balance changes.

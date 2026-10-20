@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import type { AStudioUpdateFetch } from '../src/update.ts'
+import { ASTRO_REPOSITORY_URL } from '../src/version.ts'
 import {
   checkAStudioUpdate,
   compareAStudioVersions,
@@ -36,6 +37,22 @@ function npmFetch(distTags: Record<string, string>, releases: unknown[] | 'fail'
 function releaseEntry(tag: string, options: { name?: string, body?: string } = {}): Record<string, unknown> {
   return { tag_name: tag, name: options.name ?? `v${tag} summary`, body: options.body ?? 'notes', published_at: '2026-09-26T06:42:04Z' }
 }
+
+describe('the declared repository', () => {
+  it('names the repository the update check actually queries', () => {
+    // Regression: ASTRO_REPOSITORY_URL once named an org with no such
+    // repository, so every GitHub enrichment answered 404 and the update route
+    // could never list a release — while still reporting an update whenever
+    // npm had one. The URL is a published fact rather than something derived,
+    // so it is asserted literally; if the repository ever moves, this is where
+    // to notice it.
+    expect(ASTRO_REPOSITORY_URL).toBe('https://github.com/Cwentor/dsh-astudio-connect')
+    expect(ASTRO_UPDATE_RELEASES_API_URL).toBe(
+      'https://api.github.com/repos/Cwentor/dsh-astudio-connect/releases?per_page=100',
+    )
+    expect(releasePageUrl('0.6.4')).toBe('https://github.com/Cwentor/dsh-astudio-connect/releases/tag/v0.6.4')
+  })
+})
 
 describe('version comparison', () => {
   it('orders plain SemVer numerically, never lexically', () => {

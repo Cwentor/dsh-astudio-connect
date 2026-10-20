@@ -334,6 +334,7 @@ AStudio 的 token 不携带稳定 uid，因此本插件只有一个本地身份 
 ## 已知限制
 
 - **图片输入尚未启用**：adapter 已按目录声明把模型映射为 `input: ['text', 'image']`，但 model-manager 的解析目前固定 `supportsImages: false`（上游文档里也没有对应字段），因此当前所有模型都只接受纯文字。
+- **更新检查依赖包已发布到 npm**：版本判断读的是 npm 公共 dist-tags，包未发布时这一步必然 404，更新检查恒为「不可用」。仓库地址此前指向不存在的组织，导致 GitHub releases 富化同样 404，现已修正（`src/version.ts` 与 `package.json` 的 `repository`）；发布包之后富化路径才真正生效。
 - **自动位置发现只在 Windows 上实现**：macOS / Linux 需要显式设置 `ASTUDIO_DATA_HOME`。
 - **只有一个本地身份**：AStudio token 不携带稳定 uid，目录快照、显隐偏好和探测记录都挂在 `astudio-local` 名下，不做多账号隔离。
 - **不做逐笔扣费明细**：账户接口只给聚合余额，徽标只能反映余额变化。

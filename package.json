@@ -46,7 +46,7 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/astudio-connect/dsh-astudio-connect.git"
+    "url": "git+https://github.com/Cwentor/dsh-astudio-connect.git"
   },
   "dsh": {
     "bundle": {
