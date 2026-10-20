@@ -1,0 +1,68 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write # 创建 GitHub Release
+  id-token: write # npm provenance / trusted publishing 需要 OIDC
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # gh release --generate-notes 要读历史提交
+
+      # 不用 cache：发布构建要可复现，npm 官方文档明确要求 release 构建关闭缓存
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          registry-url: https://registry.npmjs.org
+
+      # provenance / trusted publishing 需要 npm >= 11.5.1，Node 自带的版本不够新就先升上去
+      - name: Upgrade npm
+        run: npm install -g npm@latest
+
+      - name: Verify NPM_TOKEN is configured
+        env:
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          if [ -z "$NPM_TOKEN" ]; then
+            echo "::error::仓库还没有配置 NPM_TOKEN secret"
+            echo "::error::去 Settings → Secrets and variables → Actions → 新建一个名为 NPM_TOKEN 的 secret"
+            exit 1
+          fi
+
+      # tag 和 package.json 版本对不上就直接失败，别把错误版本发上去
+      - name: Verify tag matches package.json version
+        run: |
+          pkg="v$(node -p "require('./package.json').version")"
+          if [ "$pkg" != "${{ github.ref_name }}" ]; then
+            echo "::error::tag ${{ github.ref_name }} 与 package.json 里的 $pkg 不一致"
+            exit 1
+          fi
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Typecheck, test, build
+        run: npm run check
+
+      # 包名不带 scope，所以不需要 --access public；以后加了 scope 要补上
+      - name: Publish to npm
+        run: npm publish --provenance
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      - name: Create GitHub Release
+        run: gh release create "${{ github.ref_name }}" --generate-notes
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
