@@ -367,13 +367,13 @@ This project is not affiliated with, authorised by, or endorsed by iFLYTEK, AStu
 
 ## Related Projects / Community Ecosystem
 
-1. **[corrinehu/dsh-workbuddy-connect](https://github.com/corrinehu/dsh-workbuddy-connect)** (MIT) — the sibling DSH bridge plugin, aimed at the WorkBuddy desktop app. This project follows its overall structure, with AStudio's maas-api as the upstream instead.
+- **[corrinehu/dsh-workbuddy-connect](https://github.com/corrinehu/dsh-workbuddy-connect)** (MIT) — the sibling DSH bridge plugin, aimed at the WorkBuddy desktop app. This project follows its overall structure, with AStudio's maas-api as the upstream instead.
 
 Refer to that project's own documentation for supported versions and installation requirements. It is maintained independently by a third party; listing it is not an endorsement, and is not a stability or compatibility promise about this plugin's internal interfaces.
 
 ## Acknowledgements
 
-1. **[corrinehu/dsh-workbuddy-connect](https://github.com/corrinehu/dsh-workbuddy-connect)** (MIT) — the overall structure, the settings card sections, the reasoning-effort probing and the command-line design of this project are all implemented following it.
+- **[corrinehu/dsh-workbuddy-connect](https://github.com/corrinehu/dsh-workbuddy-connect)** (MIT) — the overall structure, the settings card sections, the reasoning-effort probing and the command-line design of this project are all implemented following it.
 
 ## License
 

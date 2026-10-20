@@ -368,13 +368,13 @@ npm run build      # 产出 lib/（DSH 实际加载的目录）
 
 ## 相关项目 / 社区生态
 
-1. **[corrinehu/dsh-workbuddy-connect](https://github.com/corrinehu/dsh-workbuddy-connect)**（MIT）— 同源的 DSH 桥接插件，面向 WorkBuddy 桌面应用。本项目的整体结构与它一致，上游换成 AStudio 的 maas-api。
+- **[corrinehu/dsh-workbuddy-connect](https://github.com/corrinehu/dsh-workbuddy-connect)**（MIT）— 同源的 DSH 桥接插件，面向 WorkBuddy 桌面应用。本项目的整体结构与它一致，上游换成 AStudio 的 maas-api。
 
 适用版本与安装要求请参阅该项目说明。它由第三方独立维护；收录不代表官方背书，也不构成本插件内部接口的稳定性或兼容性承诺。
 
 ## 致谢
 
-1. **[corrinehu/dsh-workbuddy-connect](https://github.com/corrinehu/dsh-workbuddy-connect)**（MIT）— 本项目的整体结构、设置卡片分区、推理档位探测与 CLI 设计均参照它实现。
+- **[corrinehu/dsh-workbuddy-connect](https://github.com/corrinehu/dsh-workbuddy-connect)**（MIT）— 本项目的整体结构、设置卡片分区、推理档位探测与 CLI 设计均参照它实现。
 
 ## 许可证
 
