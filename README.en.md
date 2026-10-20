@@ -27,6 +27,8 @@ An adaptation of the design in [dsh-workbuddy-connect](https://github.com/corrin
 - [Security](#security)
 - [Development](#development)
 - [Disclaimer](#disclaimer)
+- [Related Projects / Community Ecosystem](#related-projects--community-ecosystem)
+- [Acknowledgements](#acknowledgements)
 - [License](#license)
 
 ## Installation
@@ -173,7 +175,13 @@ Catalog parsing rules:
 - The upstream's `none` in `supported_reasoning_levels` is translated into a "thinking can be switched off" capability flag rather than treated as an effort level;
 - When merging, the built-in roster's order and names win; models unique to the upstream are appended at the end.
 
-**Fallback order**: live catalog → last successful snapshot → built-in roster. Snapshots are written to `$DSH_HOME/.astudio-connect/catalog.json`, stored per local identity. The catalog source (`live` / `saved` / `fallback`) and the fetch time are both shown on the settings card.
+**Fallback order**:
+
+1. Live catalog
+2. Last successful snapshot
+3. Built-in roster
+
+Snapshots are written to `$DSH_HOME/.astudio-connect/catalog.json`, stored per local identity. The catalog source (`live` / `saved` / `fallback`) and the fetch time are both shown on the settings card.
 
 The current built-in roster covers:
 
@@ -313,26 +321,16 @@ The plugin declares host dependencies in two places, both pinned to seam package
 |---|---|---|
 | **Supported** | DSH Desktop **2.0.17** (seam `0.2.0-rc.2`) | Current development and verification environment: provider registration, settings card and points badge all confirmed on a real machine |
 
-### pi-ai version constraint
-
-`@earendil-works/pi-ai` must be **`0.87.1`** — a hard constraint, not a recommendation.
-
-Failure mechanism: the host appends a system message to each request (pi-ai 0.87's `collapseSystemMessages`), and a stale copy that gets resolved reads `.length` on a block it does not recognise inside `estimateMessageTokens`, so every request fails with `PI_AI_ERROR` before it reaches the upstream. The typical trigger is a profile with `nodeLinker: hoisted` + `autoInstallPeers: false`: the plugin's peers are not installed, so an older pi-ai from another plugin occupies the profile root and wins bare-specifier resolution.
-
-At startup the plugin checks the actually-resolved copy with `pi-ai-guard.ts`; a mismatch logs one warning only (non-fatal) — the host may still serve other providers, but this plugin's requests will fail. If that warning appears, check for duplicate pi-ai copies being resolved.
-
-> Node works the same way: the plugin is published as ESM, and the `bin` depends on Node 22.19+ / 24+ module resolution behaviour.
-
 ## Known Limitations
 
-- **Image input is not enabled yet**: the adapter already maps a model to `input: ['text', 'image']` based on the catalog declaration, but model-manager parsing currently hardcodes `supportsImages: false` (and the upstream document has no corresponding field), so every model accepts plain text only.
-- **The update check requires the package to be published on npm**: the version judgement reads npm's public dist-tags, so with the package unpublished that step 404s and the check is always "unavailable". The repository URL also once named a nonexistent org, making the GitHub release enrichment 404 as well; both are corrected in `src/version.ts` and `package.json`'s `repository`. The enrichment path only takes effect once the package is published.
-- **Automatic location discovery is implemented only on Windows**: macOS / Linux need `ASTUDIO_DATA_HOME` set explicitly.
-- **A single local identity**: AStudio's token carries no stable uid, so catalog snapshots, visibility preferences and probe records all hang off `astudio-local`, with no multi-account isolation.
-- **No per-transaction billing detail**: the account endpoint only provides aggregate balances, so the badge can only reflect balance changes.
-- **No long-term compatibility guarantee for upstream private endpoints**: the model catalog, account endpoint and reasoning-level information are the AStudio client's own interfaces rather than an official open API, and upstream changes may break the plugin. In that case it degrades through "last successful catalog → built-in roster" and labels the source on the card, but long-term compatibility cannot be promised.
-- **The CLI's `status` does not reflect the live catalog**: see the note in [Command Line](#command-line).
-- **No account-switch following**: unlike WorkBuddy's two variants, AStudio is a single product, so the plugin does not replicate variant-level capabilities.
+- [ ] **Image input is not enabled yet**: the adapter already maps a model to `input: ['text', 'image']` based on the catalog declaration, but model-manager parsing currently hardcodes `supportsImages: false` (and the upstream document has no corresponding field), so every model accepts plain text only.
+- [ ] **The update check requires the package to be published on npm**: the version judgement reads npm's public dist-tags, so with the package unpublished that step 404s and the check is always "unavailable". The repository URL also once named a nonexistent org, making the GitHub release enrichment 404 as well; both are corrected in `src/version.ts` and `package.json`'s `repository`. The enrichment path only takes effect once the package is published.
+- [ ] **Automatic location discovery is implemented only on Windows**: macOS / Linux need `ASTUDIO_DATA_HOME` set explicitly.
+- [ ] **A single local identity**: AStudio's token carries no stable uid, so catalog snapshots, visibility preferences and probe records all hang off `astudio-local`, with no multi-account isolation.
+- [ ] **No per-transaction billing detail**: the account endpoint only provides aggregate balances, so the badge can only reflect balance changes.
+- [ ] **No long-term compatibility guarantee for upstream private endpoints**: the model catalog, account endpoint and reasoning-level information are the AStudio client's own interfaces rather than an official open API, and upstream changes may break the plugin. In that case it degrades through "last successful catalog → built-in roster" and labels the source on the card, but long-term compatibility cannot be promised.
+- [ ] **The CLI's `status` does not reflect the live catalog**: see the note in [Command Line](#command-line).
+- [ ] **No account-switch following**: unlike WorkBuddy's two variants, AStudio is a single product, so the plugin does not replicate variant-level capabilities.
 
 ## Security
 
@@ -349,7 +347,7 @@ At startup the plugin checks the actually-resolved copy with `pi-ai-guard.ts`; a
 ```bash
 npm install
 npm run check      # typecheck + test + build
-npm test           # run 262 tests (28 test files)
+npm test           # run 263 tests (28 test files)
 npm run build      # produce lib/ (the directory DSH actually loads)
 ```
 
@@ -367,9 +365,17 @@ The authors accept no liability for any direct or indirect damages arising from 
 
 This project is not affiliated with, authorised by, or endorsed by iFLYTEK, AStudio, or DeepSeek. Names appearing in this document are used only to describe compatibility; their trademark rights belong to their respective owners.
 
+## Related Projects / Community Ecosystem
+
+1. **[corrinehu/dsh-workbuddy-connect](https://github.com/corrinehu/dsh-workbuddy-connect)** (MIT) — the sibling DSH bridge plugin, aimed at the WorkBuddy desktop app. This project follows its overall structure, with AStudio's maas-api as the upstream instead.
+2. **[franksong2702/dsh-codex-connect](https://github.com/franksong2702/dsh-codex-connect)** (Apache-2.0) — another DSH provider plugin, reusing codex models and image generation via ChatGPT OAuth.
+
+Refer to each project's own documentation for supported versions and installation requirements. All of the above are maintained independently by third parties; listing them is not an endorsement, and is not a stability or compatibility promise about this plugin's internal interfaces.
+
 ## Acknowledgements
 
-[corrinehu/dsh-workbuddy-connect](https://github.com/corrinehu/dsh-workbuddy-connect) (MIT) — the overall structure, the settings card sections, the reasoning-effort probing and the command-line design of this project are all implemented following it.
+1. **[corrinehu/dsh-workbuddy-connect](https://github.com/corrinehu/dsh-workbuddy-connect)** (MIT) — the overall structure, the settings card sections, the reasoning-effort probing and the command-line design of this project are all implemented following it.
+2. **[franksong2702/dsh-codex-connect](https://github.com/franksong2702/dsh-codex-connect)** (Apache-2.0) — the DSH plugin's seam declarations and provider registration follow it.
 
 ## License
 

@@ -28,6 +28,8 @@ Bring the models signed in to the AStudio desktop app into DeepSeek Harness with
 - [安全说明](#安全说明)
 - [开发](#开发)
 - [免责声明](#免责声明)
+- [相关项目 / 社区生态](#相关项目--社区生态)
+- [致谢](#致谢)
 - [许可证](#许可证)
 
 ## 安装
@@ -174,7 +176,13 @@ shim 绑定的端口会避开 fetch 标准禁止连接的端口（`loopback.ts` 
 - 上游 `supported_reasoning_levels` 里的 `none` 被翻译成「可关闭思考」这个能力标记，不当作一个档位；
 - 合并时内置清单的顺序与名称优先，上游独有的模型追加在末尾。
 
-**降级顺序**：实时目录 → 上次成功快照 → 内置清单。快照写在 `$DSH_HOME/.astudio-connect/catalog.json`，按本地身份保存。目录来源（`live` / `saved` / `fallback`）与抓取时间都会显示在设置卡片上。
+**降级顺序**：
+
+1. 实时目录
+2. 上次成功快照
+3. 内置清单
+
+快照写在 `$DSH_HOME/.astudio-connect/catalog.json`，按本地身份保存。目录来源（`live` / `saved` / `fallback`）与抓取时间都会显示在设置卡片上。
 
 当前内置清单覆盖：
 
@@ -314,26 +322,16 @@ AStudio 的 token 不携带稳定 uid，因此本插件只有一个本地身份 
 |---|---|---|
 | **支持** | DSH Desktop **2.0.17**（seam `0.2.0-rc.2`） | 当前开发与验证环境：provider 注册、设置卡片、积分徽标均在实机确认 |
 
-### pi-ai 版本约束
-
-`@earendil-works/pi-ai` 必须是 **`0.87.1`**，这是硬约束而非建议。
-
-失败机制：宿主会给请求补一条 system message（pi-ai 0.87 的 `collapseSystemMessages`），而被解析到的旧副本在 `estimateMessageTokens` 里对不认识的块读取 `.length`，于是每个请求都在到达上游之前以 `PI_AI_ERROR` 失败。典型触发场景是 `nodeLinker: hoisted` + `autoInstallPeers: false` 的 profile：没有为插件安装 peer，同装的其他插件的旧 pi-ai 占据 profile 根目录并赢得裸说明符解析。
-
-插件启动时用 `pi-ai-guard.ts` 校验实际解析到的副本，不匹配只记一条警告（非致命）——此时宿主仍可能服务其他 provider，但本插件的请求会失败。若日志出现该警告，检查是否有重复的 pi-ai 副本被解析。
-
-> Node 也是同样道理：插件按 ESM 发布，`bin` 依赖 Node 22.19+ / 24+ 的模块解析行为。
-
 ## 已知限制
 
-- **图片输入尚未启用**：adapter 已按目录声明把模型映射为 `input: ['text', 'image']`，但 model-manager 的解析目前固定 `supportsImages: false`（上游文档里也没有对应字段），因此当前所有模型都只接受纯文字。
-- **更新检查依赖包已发布到 npm**：版本判断读的是 npm 公共 dist-tags，包未发布时这一步必然 404，更新检查恒为「不可用」。仓库地址此前指向不存在的组织，导致 GitHub releases 富化同样 404，现已修正（`src/version.ts` 与 `package.json` 的 `repository`）；发布包之后富化路径才真正生效。
-- **自动位置发现只在 Windows 上实现**：macOS / Linux 需要显式设置 `ASTUDIO_DATA_HOME`。
-- **只有一个本地身份**：AStudio token 不携带稳定 uid，目录快照、显隐偏好和探测记录都挂在 `astudio-local` 名下，不做多账号隔离。
-- **不做逐笔扣费明细**：账户接口只给聚合余额，徽标只能反映余额变化。
-- **不承诺长期兼容上游私有接口**：模型目录、账户接口与推理档位信息都是 AStudio 客户端自己的接口而非官方开放 API，上游改动可能使插件失效；届时插件按「上次成功目录 → 内置清单」降级并在卡片上标明来源，但不能保证长期兼容。
-- **CLI 的 `status` 不反映实时目录**：见[命令行](#命令行)的说明。
-- **不做账号切换跟随**：与 WorkBuddy 双 variant 不同，AStudio 只有一个产品，插件不复制 variant 级能力。
+- [ ] **图片输入尚未启用**：adapter 已按目录声明把模型映射为 `input: ['text', 'image']`，但 model-manager 的解析目前固定 `supportsImages: false`（上游文档里也没有对应字段），因此当前所有模型都只接受纯文字。
+- [ ] **更新检查依赖包已发布到 npm**：版本判断读的是 npm 公共 dist-tags，包未发布时这一步必然 404，更新检查恒为「不可用」。仓库地址此前指向不存在的组织，导致 GitHub releases 富化同样 404，现已修正（`src/version.ts` 与 `package.json` 的 `repository`）；发布包之后富化路径才真正生效。
+- [ ] **自动位置发现只在 Windows 上实现**：macOS / Linux 需要显式设置 `ASTUDIO_DATA_HOME`。
+- [ ] **只有一个本地身份**：AStudio token 不携带稳定 uid，目录快照、显隐偏好和探测记录都挂在 `astudio-local` 名下，不做多账号隔离。
+- [ ] **不做逐笔扣费明细**：账户接口只给聚合余额，徽标只能反映余额变化。
+- [ ] **不承诺长期兼容上游私有接口**：模型目录、账户接口与推理档位信息都是 AStudio 客户端自己的接口而非官方开放 API，上游改动可能使插件失效；届时插件按「上次成功目录 → 内置清单」降级并在卡片上标明来源，但不能保证长期兼容。
+- [ ] **CLI 的 `status` 不反映实时目录**：见[命令行](#命令行)的说明。
+- [ ] **不做账号切换跟随**：与 WorkBuddy 双 variant 不同，AStudio 只有一个产品，插件不复制 variant 级能力。
 
 ## 安全说明
 
@@ -350,7 +348,7 @@ AStudio 的 token 不携带稳定 uid，因此本插件只有一个本地身份 
 ```bash
 npm install
 npm run check      # typecheck + test + build
-npm test           # 运行 262 个测试（28 个测试文件）
+npm test           # 运行 263 个测试（28 个测试文件）
 npm run build      # 产出 lib/（DSH 实际加载的目录）
 ```
 
@@ -368,9 +366,17 @@ npm run build      # 产出 lib/（DSH 实际加载的目录）
 
 本项目与科大讯飞、AStudio、DeepSeek 均无关联，未获其授权或认可；文中出现的名称仅用于描述兼容关系，其商标权利归各自所有。
 
+## 相关项目 / 社区生态
+
+1. **[corrinehu/dsh-workbuddy-connect](https://github.com/corrinehu/dsh-workbuddy-connect)**（MIT）— 同源的 DSH 桥接插件，面向 WorkBuddy 桌面应用。本项目的整体结构与它一致，上游换成 AStudio 的 maas-api。
+2. **[franksong2702/dsh-codex-connect](https://github.com/franksong2702/dsh-codex-connect)**（Apache-2.0）— 另一个 DSH provider 插件，走 ChatGPT OAuth 复用 codex 模型与图像生成。
+
+适用版本与安装要求请参阅各项目说明。以上项目均由第三方独立维护；收录不代表官方背书，也不构成本插件内部接口的稳定性或兼容性承诺。
+
 ## 致谢
 
-[corrinehu/dsh-workbuddy-connect](https://github.com/corrinehu/dsh-workbuddy-connect)（MIT）— 本项目的整体结构、设置卡片分区、推理档位探测与 CLI 设计均参照它实现。
+1. **[corrinehu/dsh-workbuddy-connect](https://github.com/corrinehu/dsh-workbuddy-connect)**（MIT）— 本项目的整体结构、设置卡片分区、推理档位探测与 CLI 设计均参照它实现。
+2. **[franksong2702/dsh-codex-connect](https://github.com/franksong2702/dsh-codex-connect)**（Apache-2.0）— DSH 插件的 seam 声明与 provider 注册方式参照它。
 
 ## 许可证
 
