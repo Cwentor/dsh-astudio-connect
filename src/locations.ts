@@ -19,7 +19,7 @@
 
 import { existsSync } from 'node:fs'
 import { spawnSync } from 'node:child_process'
-import { dirname, join } from 'node:path'
+import { join, win32 } from 'node:path'
 
 /** Environment variable that overrides the AStudio data root. */
 export const ASTRO_HOME_ENV = 'ASTUDIO_DATA_HOME'
@@ -111,12 +111,20 @@ export function parseStorageRegistry(output: string, profile: AStudioProfile): A
   return { dataRoot, acodeHome }
 }
 
-/** Derive the install-sibling data directory AStudio uses on Windows. */
+/**
+ * Derive the install-sibling data directory AStudio uses on Windows.
+ *
+ * Uses `path.win32` explicitly instead of the ambient `node:path`, which is
+ * bound to the host OS. The caller already gates on the injected `platform`,
+ * but the path math has to honour that same platform: on a non-Windows host,
+ * POSIX `dirname` sees no separator in `D:\IDE\AStudio\AStudio.exe` and returns
+ * `'.'`, so the result degenerates to `'../AStudio Data'`.
+ */
 function installSiblingHome(executablePath: string, profile: AStudioProfile): string {
   const directoryName = profile === 'canary'
     ? 'AStudio Canary Data'
     : profile === 'development' ? 'AStudio Dev Data' : 'AStudio Data'
-  return join(dirname(executablePath), '..', directoryName)
+  return win32.join(win32.dirname(executablePath), '..', directoryName)
 }
 
 /** Result of running one subprocess, reduced to what the probe needs. */
