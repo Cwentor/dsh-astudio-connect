@@ -7,6 +7,7 @@ on:
 
 permissions:
   contents: write # 创建 GitHub Release
+  actions: read # 查 CI 结果，没跑通就不许发布
   id-token: write # npm provenance / trusted publishing 需要 OIDC
 
 concurrency:
@@ -49,6 +50,24 @@ jobs:
             echo "::error::tag ${{ github.ref_name }} 与 package.json 里的 $pkg 不一致"
             exit 1
           fi
+
+      # 铁律：这个提交的 CI 没过，就不许发。tag 比 CI 先到是发布事故的常见形态
+      # ——v0.1.0 第一次就是这么发出去的：tag 指向一个 ubuntu 上测试红着的提交。
+      # 修法不是重打 tag，而是先让同样的提交在 CI 上绿；绿了再打。
+      - name: Verify CI is green for this commit
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          sha="$(git rev-parse HEAD)"
+          conclusion="$(gh api \
+            "repos/${GITHUB_REPOSITORY}/actions/workflows/ci.yml/runs?head_sha=${sha}&per_page=50" \
+            --jq '[.workflow_runs[] | select(.status == "completed")] | sort_by(.created_at) | last | .conclusion // "missing"')"
+          if [ "$conclusion" != "success" ]; then
+            echo "::error::提交 ${sha} 的 CI 结果是 '${conclusion}'，拒绝发布。"
+            echo "::error::先修到 CI 全绿，确认无误后再打 tag；不要跳过检查、不要强推 tag 覆盖。"
+            exit 1
+          fi
+          echo "CI for ${sha} is green."
 
       - name: Install dependencies
         run: npm ci
