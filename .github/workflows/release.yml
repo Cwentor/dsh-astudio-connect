@@ -75,9 +75,11 @@ jobs:
       - name: Typecheck, test, build
         run: npm run check
 
-      # 包名不带 scope，所以不需要 --access public；以后加了 scope 要补上
+      # 包名不带 scope，但 --provenance 对「新包」强制要求显式 access=public：
+      # 否则 npm 直接 EUSAGE 报 "Can't generate provenance for new or private
+      # package, you must set `access` to public"，发布在最后一跳失败。
       - name: Publish to npm
-        run: npm publish --provenance
+        run: npm publish --provenance --access public
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
