@@ -14,12 +14,16 @@
  * A present-but-unreadable record is an error, never a silent fallthrough: a
  * stale older install must not win over a newer one this plugin cannot read.
  *
+ * Every path here is computed in the data root's own path dialect rather than
+ * the host's, so one set of inputs resolves to one set of strings on a Windows
+ * desktop and on a Linux CI runner alike. See {@link AStudioPathDialect}.
+ *
  * @module dsh-astudio-connect/locations
  */
 
 import { existsSync } from 'node:fs'
 import { spawnSync } from 'node:child_process'
-import { join, win32 } from 'node:path'
+import { posix, win32 } from 'node:path'
 
 /** Environment variable that overrides the AStudio data root. */
 export const ASTRO_HOME_ENV = 'ASTUDIO_DATA_HOME'
@@ -43,6 +47,39 @@ export interface AStudioStorageRecord {
 
 /** Where a resolved home came from, for diagnostics. */
 export type AStudioHomeSource = 'explicit' | 'env' | 'registry' | 'install-sibling'
+
+/**
+ * Which path grammar a data root is written in.
+ *
+ * This is deliberately *not* `process.platform`. Two different platforms meet
+ * in this module: the one that **owns** the data root (AStudio records Windows
+ * paths, and the caller may inject `platform: 'win32'`) and the one **running**
+ * the code (a Linux CI runner, a Windows desktop). The ambient `node:path`
+ * answers for the latter; using it to compute paths inside a Windows root
+ * produces mixed-separator garbage like
+ * `D:\IDE\AStudio Data/runtime/acode-home/config.toml` on Linux — a result that
+ * is wrong on one host and right on the other, so it only fails in CI.
+ *
+ * Every path this module derives is therefore computed in the dialect the
+ * path text itself declares. One rule, both hosts, same answer.
+ */
+export type AStudioPathDialect = 'win32' | 'posix'
+
+/**
+ * Pick the dialect from the path text.
+ *
+ * A drive letter (`D:\…` or `D:/…`) and a UNC prefix (`\\server\share`) are
+ * Windows; everything else — including a POSIX root supplied through
+ * `ASTUDIO_DATA_HOME` — is posix.
+ */
+export function pathDialectOf(home: string): AStudioPathDialect {
+  return /^[A-Za-z]:[\\/]/u.test(home) || home.startsWith('\\\\') ? 'win32' : 'posix'
+}
+
+/** The `node:path` implementation whose grammar matches `home`. */
+function pathApiFor(home: string) {
+  return pathDialectOf(home) === 'win32' ? win32 : posix
+}
 
 /** Inputs to discovery; every dependency is injectable for tests. */
 export interface AStudioHomeInput {
@@ -114,17 +151,17 @@ export function parseStorageRegistry(output: string, profile: AStudioProfile): A
 /**
  * Derive the install-sibling data directory AStudio uses on Windows.
  *
- * Uses `path.win32` explicitly instead of the ambient `node:path`, which is
- * bound to the host OS. The caller already gates on the injected `platform`,
- * but the path math has to honour that same platform: on a non-Windows host,
- * POSIX `dirname` sees no separator in `D:\IDE\AStudio\AStudio.exe` and returns
- * `'.'`, so the result degenerates to `'../AStudio Data'`.
+ * The path math runs in the dialect of the executable path rather than the
+ * host's: on a non-Windows host, POSIX `dirname` sees no separator in
+ * `D:\IDE\AStudio\AStudio.exe` and returns `'.'`, degenerating the result to
+ * `'../AStudio Data'`. See {@link AStudioPathDialect}.
  */
 function installSiblingHome(executablePath: string, profile: AStudioProfile): string {
   const directoryName = profile === 'canary'
     ? 'AStudio Canary Data'
     : profile === 'development' ? 'AStudio Dev Data' : 'AStudio Data'
-  return win32.join(win32.dirname(executablePath), '..', directoryName)
+  const path = pathApiFor(executablePath)
+  return path.join(path.dirname(executablePath), '..', directoryName)
 }
 
 /** Result of running one subprocess, reduced to what the probe needs. */
@@ -259,12 +296,17 @@ export function resolveAstudioHome(input: AStudioHomeInput = {}): AStudioHomeRes
   }
 }
 
-/** Path to AStudio's runtime config.toml inside one data root. */
+/**
+ * Path to AStudio's runtime config.toml inside one data root.
+ *
+ * Derived in the root's own dialect, never the host's — see
+ * {@link AStudioPathDialect}.
+ */
 export function configPathForHome(home: string): string {
-  return join(home, 'runtime', 'acode-home', 'config.toml')
+  return pathApiFor(home).join(home, 'runtime', 'acode-home', 'config.toml')
 }
 
 /** Path to AStudio's astron-session.json inside one data root. */
 export function sessionFilePathForHome(home: string): string {
-  return join(home, 'userdata', 'astron-session.json')
+  return pathApiFor(home).join(home, 'userdata', 'astron-session.json')
 }

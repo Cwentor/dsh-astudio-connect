@@ -1,5 +1,4 @@
 import { describe, it, expect } from 'vitest'
-import { join } from 'node:path'
 import {
   ASTRO_HOME_ENV,
   DEFAULT_PROFILE,
@@ -9,9 +8,11 @@ import {
   readStorageRegistry,
   configPathForHome,
   sessionFilePathForHome,
+  pathDialectOf,
 } from '../src/locations.ts'
 
 const WIN_DATA_ROOT = 'D:\\IDE\\AStudio Data'
+const POSIX_DATA_ROOT = '/home/dev/.local/share/AStudio Data'
 
 describe('parseStorageRegistry', () => {
   it('reads the production data root and acode home from registry output', () => {
@@ -77,7 +78,10 @@ describe('candidateAstudioHomes', () => {
       registryOutput: '',
       executablePath: 'D:\\IDE\\AStudio\\AStudio.exe',
     })
-    expect(candidates).toContain('D:\\IDE\\AStudio Data')
+    // Exact, not `toContain`: the regression was a *degraded* string
+    // ("../AStudio Data") produced when the host's POSIX dirname met a Windows
+    // exec path, and a substring check cannot see that.
+    expect(candidates).toEqual(['D:\\IDE\\AStudio Data'])
   })
 
   it('returns no candidates on non-Windows platforms', () => {
@@ -111,13 +115,35 @@ describe('resolveAstudioHome', () => {
   })
 })
 
-describe('configPathForHome and sessionFilePathForHome', () => {
-  it('places config.toml under runtime/acode-home', () => {
-    expect(configPathForHome(WIN_DATA_ROOT)).toBe(join(WIN_DATA_ROOT, 'runtime', 'acode-home', 'config.toml'))
+describe('pathDialectOf', () => {
+  it('reads a drive-letter path as Windows', () => {
+    expect(pathDialectOf('D:\\IDE\\AStudio Data')).toBe('win32')
+    expect(pathDialectOf('D:/IDE/AStudio Data')).toBe('win32')
   })
 
-  it('places astron-session.json under userdata', () => {
-    expect(sessionFilePathForHome(WIN_DATA_ROOT)).toBe(join(WIN_DATA_ROOT, 'userdata', 'astron-session.json'))
+  it('reads a UNC path as Windows', () => {
+    expect(pathDialectOf('\\\\server\\share\\AStudio Data')).toBe('win32')
+  })
+
+  it('reads an absolute POSIX path as posix', () => {
+    expect(pathDialectOf(POSIX_DATA_ROOT)).toBe('posix')
+    expect(pathDialectOf('/opt/astudio')).toBe('posix')
+  })
+})
+
+describe('configPathForHome and sessionFilePathForHome', () => {
+  // Asserted as literals, not via node:path: the point of these cases is that
+  // the answer is the same whichever host runs them. Building the expectation
+  // with the ambient `join` would make the test agree with a bug instead of
+  // catching it (that is exactly how the mixed-separator path shipped).
+  it('places config.toml under runtime/acode-home, in the root\'s own dialect', () => {
+    expect(configPathForHome(WIN_DATA_ROOT)).toBe('D:\\IDE\\AStudio Data\\runtime\\acode-home\\config.toml')
+    expect(configPathForHome(POSIX_DATA_ROOT)).toBe('/home/dev/.local/share/AStudio Data/runtime/acode-home/config.toml')
+  })
+
+  it('places astron-session.json under userdata, in the root\'s own dialect', () => {
+    expect(sessionFilePathForHome(WIN_DATA_ROOT)).toBe('D:\\IDE\\AStudio Data\\userdata\\astron-session.json')
+    expect(sessionFilePathForHome(POSIX_DATA_ROOT)).toBe('/home/dev/.local/share/AStudio Data/userdata/astron-session.json')
   })
 })
 
