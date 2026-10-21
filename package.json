@@ -40,7 +40,6 @@
     "cordis.patch.yml",
     "README.md",
     "README.en.md",
-    "AGENTS.md",
     "LICENSE"
   ],
   "license": "MIT",
