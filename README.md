@@ -13,16 +13,14 @@ Bring the models signed in to the AStudio desktop app into DeepSeek Harness with
 
 - [安装](#安装)
 - [功能](#功能)
-- [命令行](#命令行)
-- [工作原理](#工作原理)
 - [配置](#配置)
 - [模型目录](#模型目录)
 - [推理档位与探测](#推理档位与探测)
 - [模型显隐](#模型显隐)
 - [积分余额徽标](#积分余额徽标)
+- [计费与积分](#计费与积分)
 - [设置卡片](#设置卡片)
 - [更新检查与主机心跳](#更新检查与主机心跳)
-- [位置发现（Windows）](#位置发现windows)
 - [DSH 版本支持](#dsh-版本支持)
 - [已知限制](#已知限制)
 - [安全说明](#安全说明)
@@ -42,29 +40,31 @@ Bring the models signed in to the AStudio desktop app into DeepSeek Harness with
 
 ### 安装插件
 
-插件通过 `cordis.patch.yml` 注册插件清单，DSH 启动时自动加载。
+**命令行**：
 
 ```bash
-# 从本地目录安装
-npm install -D ./dsh-astudio-connect
+dsh plugin --profile web add dsh-astudio-connect@latest
 ```
 
-或在 DSH 插件管理器中添加本目录路径。
+把 `web` 换成你实际启动的 profile 名。
+
+> 插件版本要与 DSH 内核代次对齐，否则宿主会直接拒载。装最新版即可；仍被拒载请把 DSH 内核版本和完整报错提到 [Issues](https://github.com/Cwentor/dsh-astudio-connect/issues)，不要绕过宿主校验。
 
 ### 验证
 
-装完必须**完全退出并重启 DSH**（DSH 在启动时加载插件，仅刷新页面不够），然后确认：
+装完必须**完全退出并重启 DSH**，然后确认：
 
 1. 模型选择器里出现 **AStudio** 分组；
 2. 从分组里选一个模型，完成一次简短对话并能正常回复。
 
-两条都满足才算安装成功。若分组不出现，先用 [命令行](#命令行) 的 `doctor` 看登录态与配置路径。
+两条都满足才算安装成功。若分组不出现，到 profile 目录（`$DSH_HOME/profiles/<name>`）里跑 `npx dsh-astudio-connect doctor` 看登录态。
 
 > 也可以把安装交给本机已有的 Agent（DSH Agent、Codex、Claude Code、Cursor 等），把下面这段话原样发给它：
 >
-> 请帮我安装并验证 DSH（DeepSeek Harness）插件 dsh-astudio-connect（本地目录：`<本仓库路径>`）：
+> 请帮我安装并验证 DSH（DeepSeek Harness）插件 dsh-astudio-connect（npm 包名：`dsh-astudio-connect`）：
 > 先阅读项目 README，确认我实际使用的界面（Web / Desktop / TUI）与 DSH 内核版本；
-> 按 `cordis.patch.yml` 的注册方式从本地目录安装，不要改依赖包或绕过宿主校验；
+> Desktop 走「插件」面板的「添加插件」，填包名 `dsh-astudio-connect`；命令行 profile 用 `dsh plugin --profile <name> add dsh-astudio-connect@latest`，不要改依赖包或绕过宿主校验；
+> 若宿主因版本代次不匹配拒载，把我的 DSH 内核版本和完整报错给我；
 > 任何本地文件或配置改动，先征得我同意并做好备份；
 > 装完后验证模型选择器里出现 AStudio 分组，并陪我完成一次简短对话。
 
@@ -82,76 +82,6 @@ npm install -D ./dsh-astudio-connect
 - **命令行诊断**：`status` / `doctor` / `logout` 三个命令，全程不输出 token 材料。
 - **更新检查**：对照 npm 公共 dist-tags 判断是否有新版本，并用 GitHub releases 补充说明。
 
-## 命令行
-
-插件自带一个 `dsh-astudio-connect` 可执行文件（`package.json` 的 `bin`）。它**不启动宿主、不加载 pi-ai**，因此可以独立运行、随处排查问题：
-
-```
-Usage: dsh-astudio-connect <doctor|status|logout> [--provider astudio] [--json]
-
-  doctor   secret-free sign-in and environment diagnostics
-  status   sign-in state, catalog source, and model count
-  logout   clear the plugin in-memory credential cache
-
-  --provider  which provider to inspect; defaults to astudio
-  --json      emit one secret-free JSON document (doctor/status only)
-```
-
-从仓库本地运行（未全局安装时）：
-
-```bash
-node lib/bin.js status
-node lib/bin.js doctor --json
-node lib/bin.js logout
-```
-
-| 命令 | 输出 | 退出码 |
-|---|---|---|
-| `doctor` | 配置文件路径与存在性、登录态、model-manager 令牌是否存在、修复提示 | `signed-in` 且配置文件存在时为 `0`，否则 `1` |
-| `status` | 登录态、目录来源、模型数 | `signed-in` 时为 `0`，否则 `1` |
-| `logout` | 清除插件自留的内存凭证缓存 | 恒为 `0` |
-
-行为约定：
-
-- **不写任何东西**：三个命令都不会写 AStudio 的 `config.toml`；`logout` 只清插件自己的内存缓存，不动桌面 App 的登录，也不承诺让模型分组消失（App 的凭据文件仍在时依然生效）。
-- **不回显凭据**：输出里只有 `tokenLength` 和「是否存在」，从不打印 token 本体；异常信息里形如 JWT 的串会被替换成 `[redacted token]`。
-- **`--provider` 只接受 `astudio`**，传别的值直接报错退出。
-
-> **已知行为**：`status` 报告的目录来源恒为「内置」。实时刷新发生在宿主进程内，独立的 CLI 进程不会发起那次请求，因此它只反映内置清单，不代表宿主当前实际使用的目录。要看宿主的真实来源，请看设置卡片的「账户」分区。
-
-## 工作原理
-
-插件通过三层桥接把 maas-api 的模型注册进 DSH 的 `llm` seam：
-
-1. **凭证层**（`auth.ts`）：读取 AStudio `config.toml` 中的 `experimental_bearer_token`，内存缓存，不落盘。
-2. **本地 shim**（`shim.ts`）：在 `127.0.0.1` 上启动 OpenAI 兼容端点，经过四重入站校验后，将请求转发到 maas-api。
-3. **pi-ai 适配**（`adapter.ts`）：用 `openAICompletionsApi()` + `PiAiAdapter` 把 shim 的端点注册为 DSH 的 `astudio` provider。
-
-```
-DSH (llm seam) → AStudioPiAiAdapter → 127.0.0.1 shim → maas-api (Bearer token)
-```
-
-模型目录与积分余额走另外两条只读路径，都不经过 shim：
-
-```
-model-manager API ← modelBearerToken（模型清单与上下文参数）
-账户积分 API     ← ssoSessionId（通用 / 星火积分余额）
-```
-
-这三份凭据都来自 AStudio 自己的文件，但用途不同、互不通用。
-
-### shim 路由
-
-| 方法 | 路径 | 说明 |
-|---|---|---|
-| `GET` | `/healthz` | 存活探针 |
-| `GET` | `/v1/models` | 模型清单，**已过滤隐藏项** |
-| `POST` | `/v1/chat/completions` | 转发到 maas-api，透传请求体与流式响应 |
-
-请求体上限 64 MB；流中断时补发 `data: [DONE]\n\n`；单次流空闲上限 300 秒。
-
-shim 绑定的端口会避开 fetch 标准禁止连接的端口（`loopback.ts` 的 `FETCH_BLOCKED_PORTS`）：操作系统可能分到一个 fetch 拒连的临时端口，那样 shim 虽然监听成功、但每次请求都会以 `TypeError: fetch failed` 失败，所以绑定后会重新尝试，最多 16 次。
-
 ## 配置
 
 插件配置通过 DSH 的插件页管理（0.2.x 在侧栏「插件」面板 → AStudio Connect）：
@@ -166,8 +96,6 @@ shim 绑定的端口会避开 fetch 标准禁止连接的端口（`loopback.ts` 
 ## 模型目录
 
 模型清单与上下文参数来自 AStudio 的 **model-manager** 接口（`GET /api/v1/model-manager/models`，生产基址 `https://astronstudio-api-volces-prod.xf-yun.com/api/v1/model-manager`），这也是 AStudio 界面本身渲染的那份文档。认证使用 `astron-session.json` 里的 `modelBearerToken`（与聊天用的 `experimental_bearer_token` 是两套凭据）。
-
-> 不使用 `/v1/models`：那是 OpenAI 兼容的发现端点，只返回一个更小、更旧的子集，会漏掉实际可调用的模型。
 
 目录解析规则：
 
@@ -202,9 +130,9 @@ WorkBuddy 类上游的推理档位信息分散在上游接口与客户端私有 
 3. 上游接受 → 记为 `validating`，只保存被接受的档位；上游以 `invalid_parameter_value` 拒绝 → 记为 `rejected` / `non-validating`；
 4. 结果按 `account:modelId` 持久化，保留 24 小时后过期撤销。
 
-探测会消耗少量积分。结果只表示当前上游接受该档位，**不承诺它一定改变推理效果、速度或积分消耗**。
+探测会向上游发一次真实请求，消耗少量上游 token（与插件里其它调用一样，计入的是上游用量，不是 AStudio 积分——见[计费与积分](#计费与积分)）。结果只表示当前上游接受该档位，**不承诺它一定改变推理效果或速度**。
 
-`reasoning_effort` 到 pi-ai 档位的映射只开放上游声明过的档位；`off` 仅在模型声明了 `none`（即可关闭思考）时才开放。
+`reasoning_effort` 到 pi-ai 档位的映射只开放上游声明过的档位；`off` 仅在模型声明了 `none`（即可关闭思考）时才开放，并且**发出去的值是 `none` 而不是 `off`**——上游的词汇表只有 `none` / `high` / `max`，实测传 `off` 会被整包拒成 10005。
 
 ## 模型显隐
 
@@ -225,7 +153,7 @@ AStudio 的 token 不携带稳定 uid，因此本插件只有一个本地身份 
 
 两份积分分开显示、**不相加**，因为用途不同：
 
-- **通用积分**（`totalBalance`）：所有模型，以及插件、Skill 调用等费用。
+- **通用积分**（`totalBalance`）：所有模型，以及插件、Skill 调用等费用（这里是 AStudio 自身的插件与 Skill 调用，**不含本插件**）。
 - **星火专属积分**（`sparkTotalBalance`）：仅星火模型的消耗。
 
 数据来自 AStudio 桌面端自己使用的账户接口（`https://agent.xfyun.cn/xingchen-studio/points/balance`）。AStudio 的设置页会请求它自己的 loopback 服务，该服务带着桌面会话 Cookie 转发到账户 API；本插件直接用 `astron-session.json` 里已有的 `ssoSessionId` 访问同一个上游，因此**不新增位置发现，也不需要 AStudio 正在运行**。
@@ -249,7 +177,45 @@ AStudio 的 token 不携带稳定 uid，因此本插件只有一个本地身份 
 
 > **已知限制**：账户接口只提供聚合余额，没有逐笔明细——AStudio 桌面端本身也是如此（它引导用户去网页查看明细）。因此徽标能反映「余额变化」，但无法给出「这一轮对话精确扣了多少」。
 
+> **用插件对话时，这个数字不会变化。** 余额不变不等于没花钱，而是这笔调用压根没走 AStudio 那本账——机制见[计费与积分](#计费与积分)。
+
 若徽标显示「暂不可用」且点击 ↻ 无效，先确认插件产物是否与运行中的 DSH 版本匹配：DSH 在启动时加载插件，重新构建后必须**完全退出并重启 DSH**（仅刷新页面不够）。
+
+## 计费与积分
+
+> **先说结论**：插件发起的调用**不消耗 AStudio 积分**。这不是 bug，也不是漏写——AStudio 的积分不由模型网关注销，而是桌面端按「轮次」自报用量后结算。插件是一个完全独立的进程，天生不在这条链路上。
+
+真正扣钱的是桌面端，不是 `maas-api`：
+
+1. acode 运行时开启一个 turn（带 `turn_id` / `thread_id` / `session_id`）；
+2. 每次模型请求经桌面端的本地模型网关转发到 `model_providers.astron-spark.base_url`，网关把该请求的 input / output / cached token 作为 runtime event 记下来；
+3. 轮次结束后，桌面端聚合成一份 `ClientTurnUsageReport`（schema 1.3），写入 `state.sqlite` 的 `turn_billing_outbox`；
+4. `DirectPointsGateway.settle()` 带着桌面会话 Cookie `POST {studioApiBaseUrl}points/deduce-balance`，服务端据此算出 `ratedPoints`，扣 `GENERAL_POINTS` / `SPARK_POINTS`。
+
+被计入积分需要同时满足三个条件：请求属于某个 acode turn、该 turn 以 `completed` 收尾、结算请求提交成功。缺任何一条都不扣费——**只是「请求从那个网关出去」并不够**。
+
+插件的链路是 `DSH → 127.0.0.1 shim → maas-api`，三项全不满足：没有 turn、不产生 `turn.gateway-usage.updated` 事件、不写 `turn_billing_outbox`、不调 `points/deduce-balance`。所以余额恒定不动。
+
+本机可以直接验证这个判据（只读查询，不需要启动任何东西）：
+
+```sql
+-- 只有 completed 的轮次留下计费记录；interrupted / error 一条都没有
+SELECT t.state, count(*), count(b.billing_turn_id)
+FROM projection_turns t
+LEFT JOIN turn_billing_outbox b ON b.billing_turn_id = t.turn_id
+GROUP BY t.state;
+```
+
+在 AStudio 数据目录下的 `userdata\state.sqlite` 上执行。
+
+### 这不等于「免费」
+
+- **上游 token 照常消耗**，只是不进 AStudio 那本账；
+- **余额闸门覆盖不到插件**：AStudio 在自己余额为 0 时会以 `402 astron_points_exhausted` 拦住请求，而这个判断发生在它自己的本地网关上；插件不经过那里，因此理论上余额为 0 时仍可发起调用（未实测，按当前实现推断）；
+- **上游随时可以把计量下沉到网关**，改成按 uid / token 记账。那一天到来时这条通道会立即关闭，插件不需要改任何一行代码；
+- **不要试图让插件「补上报」**：`ClientTurnUsageReport` 里的 `session_id` / `thread_id` / `call_ids` / `capability_usages` 只有 acode 运行时才产得出来，服务端另有 `turn_billing_usage_reviews` 做缺失审计。拼凑一份报告只会进审计表，不会让账变正确。
+
+余额徽标读的就是 AStudio 自己的账本，用插件聊天时它当然不动——**余额不变不代表没花钱，只代表没走那本账**。使用前请先读[免责声明](#免责声明)。
 
 ## 设置卡片
 
@@ -282,55 +248,38 @@ AStudio 的 token 不携带稳定 uid，因此本插件只有一个本地身份 
 
 浏览器那一半不写文件，失败只通过 `console.error` 报告。这个不对称是有意的：宿主是承重的一半，缺心跳就明确意味着宿主没启动。
 
-## 位置发现（Windows）
-
-插件不假设 AStudio 装在固定路径，按以下顺序自动定位数据目录：
-
-1. `configPath` 设置里显式指定的路径（直接采用，不探测）
-2. 环境变量 `ASTUDIO_DATA_HOME`（直接采用，不探测）
-3. AStudio 自己的注册表登记：`HKCU\Software\AStudioStorage` 的 `ProductionDataRoot` / `ProductionAcodeHome`
-4. 安装目录同级的 `<安装目录名> Data`
-
-第 3 项是 AStudio 官方自己写入的登记，因此换盘、换安装位置后无需任何配置。注册表记录存在但不完整或 schema 版本不受支持时会明确报错，不会静默降级成「未连接」——一份读不懂的旧安装不该压过一份新的安装。
-
-注册表按发布通道区分值名前缀：`production` → `Production*`，`canary` → `Canary*`，`development` → `Development*`；第 4 项的目录名也随之为 `AStudio Data` / `AStudio Canary Data` / `AStudio Dev Data`。
-
-非 Windows 平台不做自动发现，需要显式设置 `ASTUDIO_DATA_HOME`。
-
 ## DSH 版本支持
-
-插件对宿主分两处声明依赖，都按 seam 包版本锁定在 **`0.2.0-rc.2`**。
-
-**宿主侧 `peerDependencies`**（运行在宿主进程）：
-
-| 包 | 用途 |
-|---|---|
-| `dsh-llm` / `dsh-llm-pi-ai` | 注册 `astudio` provider |
-| `dsh-host-webserver` | 设置卡片与积分徽标的路由 |
-| `dsh-settings` | 插件配置 |
-| `dsh-home-paths` | 快照、显隐偏好与心跳的落盘位置 |
-| `dsh-attachment` | 附件传递 |
-| `@deepseek-ai/cordis` | `^4.0.2`（`4.x`） |
-| `@deepseek-ai/schemastery` | `^3.18.2` |
-| `react` | `^18.2.0` |
-
-**浏览器侧 `dsh.client.inject`**（客户端 bundle 依赖的宿主包）：
-
-`dsh-client-ui-renderer`、`dsh-client-ui-conversation`、`dsh-client-ui-model-selection`、`dsh-client-locale`、`dsh-api-remotes`、`dsh-api-session-controller`。
 
 | 状态 | 版本 | 说明 |
 |---|---|---|
-| **支持** | DSH Desktop **2.0.17**（seam `0.2.0-rc.2`） | 当前开发与验证环境：provider 注册、设置卡片、积分徽标均在实机确认 |
+| **支持** | DSH 内核 **0.2.1-rc.2**（seam `0.2.1-rc.2`） | 该代次下 provider 注册、设置卡片、积分徽标均由本地测试与集成测试覆盖；上一代次（`0.2.0-rc.2`）为实机验证环境，桌面端具体构建号待在新内核上重新确认 |
+
+## 请求被上游拒绝时
+
+maas-api 对不合规的请求只回一句 `10005 invalid request`，不说明是哪个字段。插件按下面的顺序自愈，全部发生在转发层，DSH 与 pi-ai 不需要改动：
+
+1. **线格式修复**：`tool_calls[].function.arguments` 不是字符串、`tool` 消息没有 `tool_call_id`、`content` 为 `null` —— 这些都是任何 OpenAI 兼容服务都不接受的形状，直接就地修好并记一条 warn。
+2. **推理档位守卫**：请求里的 `reasoning_effort` 若不在该模型声明的档位内（或模型根本不支持推理），直接去掉该字段。网关是按模型校验这个值的，发了不存在的档位就是整包 400。
+3. **形状回退**：去掉 `store` / `stream_options` / `prompt_cache_key` 等平台专有字段、`developer` 角色改写为 `system`；仍然 400 就把纯文本 content 数组压平成字符串。一旦某种形状被接受，本进程后续请求直接用它，不再多花往返。
+4. **自诊断（每个进程最多一次）**：四种形状都被拒时，插件反过来问网关——依次只改一个维度（`max_tokens`、整份 `tools`、`reasoning_effort`、消息历史），再对出问题的那一项做二分查找。诊断结论会写进返回给 DSH 的错误信息（`diagnosis: ...`），能被诊断出的问题会**自动修好并重发**，修复在整个进程内保持：
+   - `max_tokens` 超限 → 压到 8192；
+   - 某个工具定义被拒 → 丢掉那一项（按名字记日志），其余工具照常生效；
+   - 档位不被接受 → 去掉 `reasoning_effort`。
+
+`store` 默认就不发（`supportsStore: false`），所以正常情况下第 1–3 步不会触发，也不产生额外请求。
+
+被拒的请求体还会写一份到 `%TEMP%\dsh-astudio-connect\failed-requests\`（最多保留 5 份，单份上限 16 MB），因为只有真实请求体能看出网关到底不接受什么。该文件含对话正文，只在本机；设 `ASTUDIO_DUMP_FAILED=0` 可关闭，`ASTUDIO_DUMP_FAILED_DIR` 可改目录。
 
 ## 已知限制
 
 - [ ] **图片输入尚未启用**：adapter 已按目录声明把模型映射为 `input: ['text', 'image']`，但 model-manager 的解析目前固定 `supportsImages: false`（上游文档里也没有对应字段），因此当前所有模型都只接受纯文字。
-- [ ] **更新检查依赖包已发布到 npm**：版本判断读的是 npm 公共 dist-tags，包未发布时这一步必然 404，更新检查恒为「不可用」。仓库地址此前指向不存在的组织，导致 GitHub releases 富化同样 404，现已修正（`src/version.ts` 与 `package.json` 的 `repository`）；发布包之后富化路径才真正生效。
-- [ ] **自动位置发现只在 Windows 上实现**：macOS / Linux 需要显式设置 `ASTUDIO_DATA_HOME`。
+- [ ] **当前只支持 Windows**：macOS / Linux 未做适配与验证，不保证可用。
 - [ ] **只有一个本地身份**：AStudio token 不携带稳定 uid，目录快照、显隐偏好和探测记录都挂在 `astudio-local` 名下，不做多账号隔离。
-- [ ] **不做逐笔扣费明细**：账户接口只给聚合余额，徽标只能反映余额变化。
+- [ ] **插件调用不计入 AStudio 积分**：积分由桌面端按 turn 自报结算，插件不产生 turn，因此不扣费；这实际上是一条不被计量的通道，见[计费与积分](#计费与积分)。这里不提供任何补齐上报的能力。
+- [ ] **余额闸门不覆盖插件**：AStudio 自己在余额为 0 时返回 `402`，该判断在它的本地网关内；插件绕过该网关，所以余额耗尽也不会被它拦住（推断，未实测）。
+- [ ] **不做逐笔扣费明细**：账户接口只给聚合余额，徽标只能反映余额变化；插件调用则完全不产生扣费记录，更谈不上明细。
 - [ ] **不承诺长期兼容上游私有接口**：模型目录、账户接口与推理档位信息都是 AStudio 客户端自己的接口而非官方开放 API，上游改动可能使插件失效；届时插件按「上次成功目录 → 内置清单」降级并在卡片上标明来源，但不能保证长期兼容。
-- [ ] **CLI 的 `status` 不反映实时目录**：见[命令行](#命令行)的说明。
+- [ ] **CLI 的 `status` 不反映实时目录**：它是独立进程，不会发起实时刷新，所以只显示内置清单；宿主的真实来源看设置卡片的「账户」分区。
 - [ ] **不做账号切换跟随**：与 WorkBuddy 双 variant 不同，AStudio 只有一个产品，插件不复制 variant 级能力。
 
 ## 安全说明
@@ -361,6 +310,8 @@ npm run build      # 产出 lib/（DSH 实际加载的目录）
 本项目**仅供个人学习和研究使用**，仅驱动使用者自己的 AStudio 账号在本机调用，请勿用于商业用途或超出个人合理使用的场景。
 
 使用者需遵守 AStudio 的服务条款；因使用本项目产生的任何后果（包括但不限于账号被限制、额度被清空、服务中断），由使用者自行承担。
+
+**本插件不实现 AStudio 的用量上报与积分结算**：通过它发起的调用不会进入 AStudio 的积分账本（机制见[计费与积分](#计费与积分)）。这个落差源于对方「客户端自报」的计费模型，不是本项目的功能卖点，也不应被用来规避计费。若你希望为这些调用付费，请使用 AStudio 官方客户端。
 
 本项目作者不对任何因使用或滥用本项目产生的直接或间接损失负责。
 

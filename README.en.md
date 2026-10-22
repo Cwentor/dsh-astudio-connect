@@ -12,16 +12,14 @@ An adaptation of the design in [dsh-workbuddy-connect](https://github.com/corrin
 
 - [Installation](#installation)
 - [Features](#features)
-- [Command Line](#command-line)
-- [How It Works](#how-it-works)
 - [Configuration](#configuration)
 - [Model Catalog](#model-catalog)
 - [Reasoning Effort and Probing](#reasoning-effort-and-probing)
 - [Model Visibility](#model-visibility)
 - [Points Balance Badge](#points-balance-badge)
+- [Billing and Points](#billing-and-points)
 - [Settings Card](#settings-card)
 - [Update Check and Host Heartbeat](#update-check-and-host-heartbeat)
-- [Location Discovery (Windows)](#location-discovery-windows)
 - [DSH Version Support](#dsh-version-support)
 - [Known Limitations](#known-limitations)
 - [Security](#security)
@@ -41,29 +39,31 @@ An adaptation of the design in [dsh-workbuddy-connect](https://github.com/corrin
 
 ### Install the plugin
 
-The plugin registers its manifest through `cordis.patch.yml`, and DSH loads it at startup.
+**Command line**:
 
 ```bash
-# Install from the local directory
-npm install -D ./dsh-astudio-connect
+dsh plugin --profile web add dsh-astudio-connect@latest
 ```
 
-Or add this directory path in the DSH plugin manager.
+Replace `web` with the profile you actually boot.
+
+> The plugin version must match your DSH kernel generation, or the host refuses to load it. Installing the latest is enough; if it is still refused, report your DSH kernel version and the full error on [Issues](https://github.com/Cwentor/dsh-astudio-connect/issues) rather than bypassing the host check.
 
 ### Verify
 
-After installing you must **fully quit and restart DSH** (DSH loads plugins at startup; refreshing the page is not enough), then confirm:
+After installing you must **fully quit and restart DSH**, then confirm:
 
 1. An **AStudio** group appears in the model picker;
 2. Pick a model from that group and complete a short conversation that answers normally.
 
-Both must hold for the install to count as successful. If the group does not appear, start with `doctor` in the [Command Line](#command-line) section to check sign-in state and the config path.
+Both must hold for the install to count as successful. If the group does not appear, run `npx dsh-astudio-connect doctor` inside the profile directory (`$DSH_HOME/profiles/<name>`) to check sign-in state.
 
 > You can also hand the install to an agent you already have locally (DSH Agent, Codex, Claude Code, Cursor, …) by sending it this paragraph verbatim:
 >
-> Please install and verify the DSH (DeepSeek Harness) plugin dsh-astudio-connect (local directory: `<repo path>`):
+> Please install and verify the DSH (DeepSeek Harness) plugin dsh-astudio-connect (npm package: `dsh-astudio-connect`):
 > Read the project README first, and confirm which interface I actually use (Web / Desktop / TUI) and the DSH kernel version;
-> Install from the local directory using the `cordis.patch.yml` registration, without modifying dependency packages or bypassing host validation;
+> On Desktop use **Add plugin** in the Plugins panel and enter `dsh-astudio-connect`; for a command-line profile use `dsh plugin --profile <name> add dsh-astudio-connect@latest`, without modifying dependency packages or bypassing host validation;
+> If the host refuses it because the kernel generation does not match, give me my DSH kernel version and the full error;
 > Ask me for consent and back up any local file or configuration change;
 > Once installed, verify that an AStudio group appears in the model picker, and run a short conversation with me.
 
@@ -81,76 +81,6 @@ Both must hold for the install to count as successful. If the group does not app
 - **Command-line diagnostics**: `status`, `doctor` and `logout` — never emit credential material.
 - **Update check**: compares against npm's public dist-tags to decide whether a newer release exists, and enriches with GitHub release notes.
 
-## Command Line
-
-The plugin ships a `dsh-astudio-connect` executable (the `bin` in `package.json`). It **does not start the host and does not load pi-ai**, so it can run standalone and be used to troubleshoot from anywhere:
-
-```
-Usage: dsh-astudio-connect <doctor|status|logout> [--provider astudio] [--json]
-
-  doctor   secret-free sign-in and environment diagnostics
-  status   sign-in state, catalog source, and model count
-  logout   clear the plugin in-memory credential cache
-
-  --provider  which provider to inspect; defaults to astudio
-  --json      emit one secret-free JSON document (doctor/status only)
-```
-
-Run it from a local checkout (when not globally installed):
-
-```bash
-node lib/bin.js status
-node lib/bin.js doctor --json
-node lib/bin.js logout
-```
-
-| Command | Output | Exit code |
-|---|---|---|
-| `doctor` | Config file path and presence, sign-in state, whether the model-manager token exists, remediation hints | `0` when `signed-in` **and** the config file exists, otherwise `1` |
-| `status` | Sign-in state, catalog source, model count | `0` when `signed-in`, otherwise `1` |
-| `logout` | Clears the plugin's own in-memory credential cache | Always `0` |
-
-Behaviour guarantees:
-
-- **Writes nothing**: none of the three commands writes AStudio's `config.toml`; `logout` clears only the plugin's own in-memory cache, leaves the desktop app's sign-in alone, and does not promise to make the model group disappear (it still applies as long as the app's credential file is present).
-- **Never echoes credentials**: output carries only `tokenLength` and "present / absent", never the token itself; JWT-shaped strings in error text are replaced with `[redacted token]`.
-- **`--provider` accepts only `astudio`** — anything else errors out.
-
-> **Known behaviour**: the catalog source reported by `status` is always `built-in`. The live refresh happens inside the host process, and a standalone CLI process does not issue that request, so it reflects the built-in roster rather than the catalog the host is actually using. For the host's real source, see the Account section of the settings card.
-
-## How It Works
-
-The plugin registers maas-api's models into DSH's `llm` seam through a three-layer bridge:
-
-1. **Credential layer** (`auth.ts`): reads `experimental_bearer_token` from AStudio's `config.toml`, caches it in memory, never writes it to disk.
-2. **Local shim** (`shim.ts`): starts an OpenAI-compatible endpoint on `127.0.0.1`, validates four inbound guards, then forwards to maas-api.
-3. **pi-ai adapter** (`adapter.ts`): registers the shim's endpoint as DSH's `astudio` provider using `openAICompletionsApi()` + `PiAiAdapter`.
-
-```
-DSH (llm seam) → AStudioPiAiAdapter → 127.0.0.1 shim → maas-api (Bearer token)
-```
-
-The model catalog and the points balance travel over two separate read-only paths that do not go through the shim:
-
-```
-model-manager API ← modelBearerToken (model roster and context parameters)
-account points API ← ssoSessionId (general / Spark points balance)
-```
-
-All three credentials come from AStudio's own files, but they serve different purposes and are not interchangeable.
-
-### Shim routes
-
-| Method | Path | Purpose |
-|---|---|---|
-| `GET` | `/healthz` | Liveness probe |
-| `GET` | `/v1/models` | Model roster, **hidden entries filtered out** |
-| `POST` | `/v1/chat/completions` | Forwarded to maas-api, request body and streaming response passed through |
-
-Request bodies are capped at 64 MB; a broken stream gets a terminating `data: [DONE]\n\n`; a single stream idles out after 300 seconds.
-
-The port the shim binds avoids the ports the fetch standard refuses to connect to (`FETCH_BLOCKED_PORTS` in `loopback.ts`): the OS may hand out an ephemeral port that fetch will not dial, in which case the shim listens successfully yet every request fails with `TypeError: fetch failed`. So it rebinds, up to 16 attempts.
-
 ## Configuration
 
 Plugin configuration is managed through DSH's plugin page (on 0.2.x: sidebar **Plugins** panel → AStudio Connect):
@@ -165,8 +95,6 @@ Plugin configuration is managed through DSH's plugin page (on 0.2.x: sidebar **P
 ## Model Catalog
 
 The model roster and context parameters come from AStudio's **model-manager** endpoint (`GET /api/v1/model-manager/models`, production base `https://astronstudio-api-volces-prod.xf-yun.com/api/v1/model-manager`), which is the same document the AStudio UI renders. Authentication uses `modelBearerToken` from `astron-session.json` — a separate credential from the chat `experimental_bearer_token`.
-
-> `/v1/models` is deliberately not used: that OpenAI-compatible discovery endpoint answers with a smaller, staler subset and would drop models that are in fact callable.
 
 Catalog parsing rules:
 
@@ -201,7 +129,7 @@ So this plugin uses a **user-consented, dynamically discovered** approach:
 3. Upstream accepts → recorded as `validating`, storing only the accepted levels; upstream rejects with `invalid_parameter_value` → recorded as `rejected` / `non-validating`;
 4. Results are persisted per `account:modelId` and expire after 24 hours.
 
-Probing consumes a small amount of points. A result only means the current upstream accepts that level — **it does not promise that reasoning quality, speed, or point consumption will change**.
+Probing sends one real upstream request, consuming a small number of upstream tokens (like every other call the plugin makes, that counts against upstream usage, not AStudio points — see [Billing and Points](#billing-and-points)). A result only means the current upstream accepts that level — **it does not promise that reasoning quality or speed will change**.
 
 The mapping from `reasoning_effort` to pi-ai levels only exposes levels the upstream declared; `off` is exposed only when the model declares `none` (i.e. thinking can be switched off).
 
@@ -224,7 +152,7 @@ General 1393 · Spark 24621
 
 The two balances are shown separately and are **never added together**, because they pay for different things:
 
-- **General points** (`totalBalance`): every model, plus plugins and Skill calls.
+- **General points** (`totalBalance`): every model, plus plugins and Skill calls (AStudio's own plugins and Skills — **not this plugin**).
 - **Spark points** (`sparkTotalBalance`): Spark-branded models only.
 
 The data comes from the account endpoint the AStudio desktop app itself uses (`https://agent.xfyun.cn/xingchen-studio/points/balance`). AStudio's settings page requests its own loopback service, which forwards to the account API carrying the desktop session cookie; this plugin reaches the same upstream directly using the `ssoSessionId` already present in `astron-session.json`, so it **adds no location discovery and does not require AStudio to be running**.
@@ -248,7 +176,45 @@ Behaviour guarantees:
 
 > **Known limitation**: the account endpoint only provides aggregate balances, with no per-transaction detail — the AStudio desktop app itself is the same way (it directs users to the web to view details). So the badge can reflect *balance changes* but cannot say *exactly how much this conversation consumed*.
 
+> **This number will not move while you chat through the plugin.** An unchanged balance does not mean nothing was spent — it means the call never entered AStudio's ledger at all. See [Billing and Points](#billing-and-points).
+
 If the badge shows "Unavailable" and clicking ↻ does nothing, first confirm the plugin artifacts match the running DSH version: DSH loads plugins at startup, so after rebuilding you must **fully quit and restart DSH** (refreshing the page is not enough).
+
+## Billing and Points
+
+> **The short version**: calls made by this plugin **do not consume AStudio points**. That is neither a bug nor an omission — AStudio's points are not charged by the model gateway. The desktop app settles them per *turn*, from usage it reports itself. The plugin is a separate process and is never on that path.
+
+The thing that actually charges you is the desktop app, not `maas-api`:
+
+1. The acode runtime opens a turn (carrying `turn_id` / `thread_id` / `session_id`).
+2. Each model request goes through the desktop's local model gateway to `model_providers.astron-spark.base_url`; the gateway records that request's input / output / cached tokens as a runtime event.
+3. When the turn ends, the desktop app aggregates those events into a `ClientTurnUsageReport` (schema 1.3) and writes it to `turn_billing_outbox` in `state.sqlite`.
+4. `DirectPointsGateway.settle()` POSTs that report to `{studioApiBaseUrl}points/deduce-balance` with the desktop session cookie; the server rates it into `ratedPoints` and deducts `GENERAL_POINTS` / `SPARK_POINTS`.
+
+Three conditions must hold at once to be charged: the request belongs to an acode turn, that turn finishes as `completed`, and the settlement request is submitted successfully. Miss any one and nothing is charged — **merely leaving through that gateway is not enough**.
+
+The plugin's path is `DSH → 127.0.0.1 shim → maas-api`, and it satisfies none of the three: no turn, no `turn.gateway-usage.updated` event, no `turn_billing_outbox` row, no `points/deduce-balance` call. The balance therefore never moves.
+
+You can verify the rule locally with a read-only query (nothing needs to be running):
+
+```sql
+-- Only completed turns leave a billing record; interrupted / error leave none
+SELECT t.state, count(*), count(b.billing_turn_id)
+FROM projection_turns t
+LEFT JOIN turn_billing_outbox b ON b.billing_turn_id = t.turn_id
+GROUP BY t.state;
+```
+
+Run it against `userdata\state.sqlite` inside AStudio's data directory.
+
+### This is not the same as "free"
+
+- **Upstream tokens are still consumed** — they just never reach AStudio's ledger.
+- **The balance gate does not cover the plugin**: when its own balance hits 0, AStudio rejects requests with `402 astron_points_exhausted` — but that check lives in its own local gateway, which the plugin does not traverse. In theory the plugin still works at zero balance (inferred from the current implementation; not tested).
+- **Upstream can move metering into the gateway at any time**, keying it on uid or token. When that happens this path closes immediately, with no code change on our side.
+- **Do not try to "report back" on the plugin's behalf**: the `session_id` / `thread_id` / `call_ids` / `capability_usages` in `ClientTurnUsageReport` can only be produced by the acode runtime, and the server keeps `turn_billing_usage_reviews` as a missing-usage audit. A fabricated report only lands in the audit table; it does not make the books right.
+
+The badge reads AStudio's own ledger, so of course it stays still while you chat through the plugin — **an unchanged balance does not mean nothing was spent, only that the spend missed that ledger**. Read the [Disclaimer](#disclaimer) before using this.
 
 ## Settings Card
 
@@ -281,55 +247,38 @@ The heartbeat distinguishes "the host is still running" from "the host crashed a
 
 The browser half writes no files and reports failure only through `console.error`. That asymmetry is intentional: the host is the load-bearing half, and a missing heartbeat unambiguously means the host never started.
 
-## Location Discovery (Windows)
-
-The plugin does not assume AStudio lives at a fixed path. It locates the data directory in this order:
-
-1. A path explicitly set in the `configPath` setting (used verbatim, not probed)
-2. The `ASTUDIO_DATA_HOME` environment variable (used verbatim, not probed)
-3. AStudio's own registry record: `ProductionDataRoot` / `ProductionAcodeHome` under `HKCU\Software\AStudioStorage`
-4. The `<install directory name> Data` directory beside the install directory
-
-Item 3 is the record AStudio itself writes, so moving drives or reinstalling needs no configuration at all. A record that exists but is incomplete or of an unsupported schema version raises an explicit error rather than silently degrading to "not connected" — an older install this plugin cannot read must not win over a newer one.
-
-Registry value-name prefixes are split by release channel: `production` → `Production*`, `canary` → `Canary*`, `development` → `Development*`; item 4's directory name follows as `AStudio Data` / `AStudio Canary Data` / `AStudio Dev Data`.
-
-Automatic discovery is not implemented on non-Windows platforms; set `ASTUDIO_DATA_HOME` explicitly there.
-
 ## DSH Version Support
-
-The plugin declares host dependencies in two places, both pinned to seam package version **`0.2.0-rc.2`**.
-
-**Host-side `peerDependencies`** (run in the host process):
-
-| Package | Purpose |
-|---|---|
-| `dsh-llm` / `dsh-llm-pi-ai` | Register the `astudio` provider |
-| `dsh-host-webserver` | Routes for the settings card and points badge |
-| `dsh-settings` | Plugin configuration |
-| `dsh-home-paths` | Where snapshots, visibility preferences and the heartbeat are written |
-| `dsh-attachment` | Attachment passing |
-| `@deepseek-ai/cordis` | `^4.0.2` (`4.x`) |
-| `@deepseek-ai/schemastery` | `^3.18.2` |
-| `react` | `^18.2.0` |
-
-**Browser-side `dsh.client.inject`** (host packages the client bundle depends on):
-
-`dsh-client-ui-renderer`, `dsh-client-ui-conversation`, `dsh-client-ui-model-selection`, `dsh-client-locale`, `dsh-api-remotes`, `dsh-api-session-controller`.
 
 | Status | Version | Notes |
 |---|---|---|
-| **Supported** | DSH Desktop **2.0.17** (seam `0.2.0-rc.2`) | Current development and verification environment: provider registration, settings card and points badge all confirmed on a real machine |
+| **Supported** | DSH kernel **0.2.1-rc.2** (seam `0.2.1-rc.2`) | On this generation provider registration, the settings card and the points badge are covered by unit and integration tests; the previous generation (`0.2.0-rc.2`) was the real-machine environment, so the exact desktop build number still needs re-confirming on the new kernel |
+
+## When the upstream refuses a request
+
+maas-api answers a non-conforming request with a bare `10005 invalid request` and never names the field. The plugin heals the request in the forwarding layer, in this order, without DSH or pi-ai having to change:
+
+1. **Wire repair** — `tool_calls[].function.arguments` that is not a string, a `tool` message with no `tool_call_id`, `content` set to `null`. Every OpenAI-compatible server rejects these, so they are fixed in place and logged at warn level.
+2. **Effort guard** — a `reasoning_effort` the model does not declare (or any effort for a model that does not reason) is dropped. The gateway validates the level per model and refuses the whole request otherwise.
+3. **Shape fallback** — drop platform-only fields (`store`, `stream_options`, `prompt_cache_key`, …) and rewrite `developer` as `system`; if that is still refused, flatten text-only content arrays to strings. The first accepted shape is reused for the rest of the process, so later requests cost no extra round trip.
+4. **Self-diagnosis (once per process)** — when every shape is refused, the plugin asks the gateway instead of guessing: it changes one dimension at a time (`max_tokens`, the whole `tools` array, `reasoning_effort`, the message history), then bisects whichever one is at fault. The conclusion is included in the error handed back to DSH (`diagnosis: …`), and what can be fixed is fixed and resent, staying fixed for the process:
+   - `max_tokens` above the limit → clamped to 8192;
+   - a refused tool definition → dropped by name (logged), the rest still apply;
+   - an unsupported effort → removed.
+
+`store` is never sent (`supportsStore: false`), so steps 1–3 normally do nothing and cost no requests.
+
+A refused body is also written to `%TEMP%\dsh-astudio-connect\failed-requests\` (five files at most, 16 MB each) because only the real body shows what the gateway objects to. Those files contain conversation text and stay on the machine; set `ASTUDIO_DUMP_FAILED=0` to disable this, or `ASTUDIO_DUMP_FAILED_DIR` to relocate it.
 
 ## Known Limitations
 
 - [ ] **Image input is not enabled yet**: the adapter already maps a model to `input: ['text', 'image']` based on the catalog declaration, but model-manager parsing currently hardcodes `supportsImages: false` (and the upstream document has no corresponding field), so every model accepts plain text only.
-- [ ] **The update check requires the package to be published on npm**: the version judgement reads npm's public dist-tags, so with the package unpublished that step 404s and the check is always "unavailable". The repository URL also once named a nonexistent org, making the GitHub release enrichment 404 as well; both are corrected in `src/version.ts` and `package.json`'s `repository`. The enrichment path only takes effect once the package is published.
-- [ ] **Automatic location discovery is implemented only on Windows**: macOS / Linux need `ASTUDIO_DATA_HOME` set explicitly.
+- [ ] **Windows only for now**: macOS / Linux are neither adapted nor verified, so they are unsupported.
 - [ ] **A single local identity**: AStudio's token carries no stable uid, so catalog snapshots, visibility preferences and probe records all hang off `astudio-local`, with no multi-account isolation.
-- [ ] **No per-transaction billing detail**: the account endpoint only provides aggregate balances, so the badge can only reflect balance changes.
+- [ ] **Plugin calls are not billed to AStudio points**: points are settled by the desktop app per turn, and the plugin creates no turn, so nothing is deducted. For better or worse this is an unmetered path — see [Billing and Points](#billing-and-points). The plugin deliberately offers no way to "report back".
+- [ ] **The balance gate does not cover the plugin**: AStudio itself returns `402` at zero balance, but that check lives inside its own local gateway, which the plugin bypasses (inferred, not tested).
+- [ ] **No per-transaction billing detail**: the account endpoint only provides aggregate balances, so the badge can only reflect balance changes; plugin calls produce no billing records at all, let alone detail.
 - [ ] **No long-term compatibility guarantee for upstream private endpoints**: the model catalog, account endpoint and reasoning-level information are the AStudio client's own interfaces rather than an official open API, and upstream changes may break the plugin. In that case it degrades through "last successful catalog → built-in roster" and labels the source on the card, but long-term compatibility cannot be promised.
-- [ ] **The CLI's `status` does not reflect the live catalog**: see the note in [Command Line](#command-line).
+- [ ] **The CLI's `status` does not reflect the live catalog**: it is a separate process that never issues the live refresh, so it only shows the built-in roster; for the host's real source, check the "Account" section of the settings card.
 - [ ] **No account-switch following**: unlike WorkBuddy's two variants, AStudio is a single product, so the plugin does not replicate variant-level capabilities.
 
 ## Security
@@ -360,6 +309,8 @@ Strict TypeScript, with `noUncheckedIndexedAccess` and `exactOptionalPropertyTyp
 This project is **for personal learning and research only**. It drives only the user's own AStudio account on the local machine — do not use it commercially or beyond reasonable personal use.
 
 Users must comply with AStudio's terms of service; any consequence arising from use of this project (including but not limited to account restrictions, cleared credits, or service interruption) is borne by the user alone.
+
+**This plugin implements neither AStudio's usage reporting nor its points settlement**: calls made through it never enter AStudio's points ledger (mechanism in [Billing and Points](#billing-and-points)). That gap follows from the other side's client-reported billing model — it is not a feature of this project, and it must not be used to evade billing. If you want to pay for these calls, use the official AStudio client.
 
 The authors accept no liability for any direct or indirect damages arising from the use or misuse of this project.
 
