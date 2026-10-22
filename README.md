@@ -3,7 +3,6 @@
 [English](./README.en.md) | 中文
 
 将 AStudio 应用中已登录的模型接入 [DeepSeek Harness (DSH)](https://github.com/deepseek-ai/deepseek-harness)，零配置使用。
-Bring the models signed in to the AStudio desktop app into DeepSeek Harness with zero configuration.
 
 参考 [dsh-workbuddy-connect](https://github.com/corrinehu/dsh-workbuddy-connect) 的设计思路，针对 AStudio 的 maas-api（标准 OpenAI 协议）大幅精简。
 
