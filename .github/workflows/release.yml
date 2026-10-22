@@ -4,6 +4,15 @@ on:
   push:
     tags:
       - 'v*'
+  # 发布跑到一半失败（典型：npm publish 成功、gh release create 挂掉）时，删 tag 重打是最脏的
+  # 修法——历史被改写，而且版本号已经在 npm 上，重打也发不了。留一个手工入口，对着已有 tag 重跑，
+  # 下面每一步都做成幂等的。
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 要发布的 tag（必须已存在，如 v0.2.0）
+        required: true
+        type: string
 
 permissions:
   contents: write # 创建 GitHub Release
@@ -11,16 +20,34 @@ permissions:
   id-token: write # npm provenance / trusted publishing 需要 OIDC
 
 concurrency:
-  group: release-${{ github.ref }}
+  group: release-${{ inputs.tag || github.ref_name }}
   cancel-in-progress: false
+
+env:
+  # push tag 触发时 inputs.tag 为空；手工触发时用输入值。两条路径统一走这个变量。
+  TAG_NAME: ${{ inputs.tag || github.ref_name }}
 
 jobs:
   publish:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
+      # 手工入口可以输入任意字符串，先拦掉不像 tag 的输入，别让它一路跑到 checkout 才炸
+      - name: Verify tag format
+        run: |
+          case "$TAG_NAME" in
+            v[0-9]*)
+              echo "release target: $TAG_NAME"
+              ;;
+            *)
+              echo "::error::tag 必须形如 v0.2.0，收到 '$TAG_NAME'"
+              exit 1
+              ;;
+          esac
+
       - uses: actions/checkout@v4
         with:
+          ref: ${{ inputs.tag || github.ref_name }}
           fetch-depth: 0 # gh release --generate-notes 要读历史提交
 
       # 不用 cache：发布构建要可复现，npm 官方文档明确要求 release 构建关闭缓存
@@ -49,8 +76,8 @@ jobs:
       - name: Verify tag matches package.json version
         run: |
           pkg="v$(node -p "require('./package.json').version")"
-          if [ "$pkg" != "${{ github.ref_name }}" ]; then
-            echo "::error::tag ${{ github.ref_name }} 与 package.json 里的 $pkg 不一致"
+          if [ "$pkg" != "$TAG_NAME" ]; then
+            echo "::error::tag $TAG_NAME 与 package.json 里的 $pkg 不一致"
             exit 1
           fi
 
@@ -78,15 +105,29 @@ jobs:
       - name: Typecheck, test, build
         run: npm run check
 
+      # 幂等：版本已经在 registry 上就跳过，不再让 npm 用 E403/E409 打断整条重跑链路。
       # 包名不带 scope，但 --provenance 对「新包」强制要求显式 access=public：
       # 否则 npm 直接 EUSAGE 报 "Can't generate provenance for new or private
       # package, you must set `access` to public"，发布在最后一跳失败。
       - name: Publish to npm
-        run: npm publish --provenance --access public
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          name="$(node -p "require('./package.json').name")"
+          version="$(node -p "require('./package.json').version")"
+          if npm view "${name}@${version}" version >/dev/null 2>&1; then
+            echo "${name}@${version} 已在 npm 上，跳过 publish。"
+          else
+            npm publish --provenance --access public
+          fi
 
+      # 幂等：Release 已存在就原样留着，不覆盖已经手工改过的说明。
       - name: Create GitHub Release
-        run: gh release create "${{ github.ref_name }}" --generate-notes
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          if gh release view "$TAG_NAME" >/dev/null 2>&1; then
+            echo "Release $TAG_NAME 已存在，跳过。"
+          else
+            gh release create "$TAG_NAME" --generate-notes
+          fi
