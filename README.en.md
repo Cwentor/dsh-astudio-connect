@@ -74,7 +74,7 @@ Both must hold for the install to count as successful. If the group does not app
 - **Standard protocol**: maas-api speaks standard OpenAI-compatible protocol, which pi-ai supports natively — no protocol translation.
 - **Full capability bridge**: non-streaming, streaming SSE, tool calls, `reasoning_content` from reasoning models, and context compaction all reuse the DSH host's own implementations.
 - **Model catalog**: taken from AStudio's own model-manager endpoint (the same document the AStudio UI renders), carrying real context windows and max output, with a three-tier fallback of live → saved → built-in.
-- **Reasoning-effort probing**: for models that declare no levels, sends a minimal sentinel-bearing request under your explicit consent, confirming the upstream actually validates `reasoning_effort` before accepting which levels it accepts.
+- **Reasoning-effort probing**: for models that declare no levels, sends a minimal sentinel-bearing request under your explicit consent, first confirming the upstream really validates `reasoning_effort`, then which levels it accepts.
 - **Model visibility**: pick which models appear in the picker from the settings card; preferences are stored per signed-in account, and hiding only affects selectability, not sessions already using that model.
 - **Balance at a glance**: with an AStudio model selected, the composer shows the account's general and Spark points balances beside the model picker, with a ↻ manual refresh and no automatic polling.
 - **Settings card**: the AStudio Connect card under the sidebar Plugins panel, split into Account / Context / Probe sections, with manual catalog refresh and probing.
@@ -113,8 +113,9 @@ Snapshots are written to `$DSH_HOME/.astudio-connect/catalog.json`, stored per l
 
 The current built-in roster covers:
 
-- **Reasoning models**: `spark-x2.5`, `spark-x2.6-preview` (thinking switchable, `low` / `high` / `max`)
-- **Chat models**: `spark-x2.5-4b`, `xopglm52`, `xopdeepseekv4pro`, `xopdeepseekv4pro0813`, `xopdsv4flash0731in`, `astronclaw-auto`
+- **Reasoning models (Spark)**: `spark-x2.5`, `spark-x2.6-preview`, `spark-x2.6`, `astronclaw-auto` (thinking switchable off, declare `high`); `spark-x2.6-4b` (thinking switchable off, declares `high` / `max`)
+- **Reasoning models (other vendors)**: `xopglm52`, `xopdeepseekv4pro0813`, `xopdsv4flash0731in` (thinking switchable off, declare `high` / `max`)
+- **Chat models**: `spark-x2.5-4b`, `xopdeepseekv4pro`
 
 ## Reasoning Effort and Probing
 
@@ -131,7 +132,7 @@ So this plugin uses a **user-consented, dynamically discovered** approach:
 
 Probing sends one real upstream request, consuming a small number of upstream tokens (like every other call the plugin makes, that counts against upstream usage, not AStudio points — see [Billing and Points](#billing-and-points)). A result only means the current upstream accepts that level — **it does not promise that reasoning quality or speed will change**.
 
-The mapping from `reasoning_effort` to pi-ai levels only exposes levels the upstream declared; `off` is exposed only when the model declares `none` (i.e. thinking can be switched off).
+The mapping from `reasoning_effort` to pi-ai levels only exposes levels the upstream declared; `off` is exposed only when the model declares `none` (i.e. thinking can be switched off), and **what actually goes out on the wire is `none`, not `off`** — upstream's vocabulary is only `none` / `high` / `max`, and a literal `off` gets the whole request refused with 10005.
 
 ## Model Visibility
 
@@ -258,8 +259,8 @@ The browser half writes no files and reports failure only through `console.error
 maas-api answers a non-conforming request with a bare `10005 invalid request` and never names the field. The plugin heals the request in the forwarding layer, in this order, without DSH or pi-ai having to change:
 
 1. **Wire repair** — `tool_calls[].function.arguments` that is not a string, a `tool` message with no `tool_call_id`, `content` set to `null`. Every OpenAI-compatible server rejects these, so they are fixed in place and logged at warn level.
-2. **Effort guard** — a `reasoning_effort` the model does not declare (or any effort for a model that does not reason) is dropped. The gateway validates the level per model and refuses the whole request otherwise.
-3. **Shape fallback** — drop platform-only fields (`store`, `stream_options`, `prompt_cache_key`, …) and rewrite `developer` as `system`; if that is still refused, flatten text-only content arrays to strings. The first accepted shape is reused for the rest of the process, so later requests cost no extra round trip.
+2. **Effort guard** — a `reasoning_effort` the model does not declare (or any effort for a model that does not reason) is dropped. The gateway validates the level per model and answers 400 for the whole request otherwise.
+3. **Shape fallback** — drop platform-only fields (`store`, `stream_options`, `prompt_cache_key`, …) and rewrite `developer` as `system`; if that still earns a 400, flatten text-only content arrays to strings. The first accepted shape is reused for the rest of the process, so later requests cost no extra round trip.
 4. **Self-diagnosis (once per process)** — when every shape is refused, the plugin asks the gateway instead of guessing: it changes one dimension at a time (`max_tokens`, the whole `tools` array, `reasoning_effort`, the message history), then bisects whichever one is at fault. The conclusion is included in the error handed back to DSH (`diagnosis: …`), and what can be fixed is fixed and resent, staying fixed for the process:
    - `max_tokens` above the limit → clamped to 8192;
    - a refused tool definition → dropped by name (logged), the rest still apply;
@@ -296,7 +297,7 @@ A refused body is also written to `%TEMP%\dsh-astudio-connect\failed-requests\` 
 ```bash
 npm install
 npm run check      # typecheck + test + build
-npm test           # run 263 tests (28 test files)
+npm test           # run 302 tests (29 test files)
 npm run build      # produce lib/ (the directory DSH actually loads)
 ```
 

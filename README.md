@@ -113,8 +113,9 @@ dsh plugin --profile web add dsh-astudio-connect@latest
 
 当前内置清单覆盖：
 
-- **推理模型**：`spark-x2.5`、`spark-x2.6-preview`（可切换思考，支持 `low` / `high` / `max`）
-- **对话模型**：`spark-x2.5-4b`、`xopglm52`、`xopdeepseekv4pro`、`xopdeepseekv4pro0813`、`xopdsv4flash0731in`、`astronclaw-auto`
+- **推理模型（星火）**：`spark-x2.5`、`spark-x2.6-preview`、`spark-x2.6`、`astronclaw-auto`（可关闭思考，声明 `high`）；`spark-x2.6-4b`（可关闭思考，声明 `high` / `max`）
+- **推理模型（其他）**：`xopglm52`、`xopdeepseekv4pro0813`、`xopdsv4flash0731in`（可关闭思考，声明 `high` / `max`）
+- **对话模型**：`spark-x2.5-4b`、`xopdeepseekv4pro`
 
 ## 推理档位与探测
 
@@ -296,7 +297,7 @@ maas-api 对不合规的请求只回一句 `10005 invalid request`，不说明�
 ```bash
 npm install
 npm run check      # typecheck + test + build
-npm test           # 运行 263 个测试（28 个测试文件）
+npm test           # 运行 302 个测试（29 个测试文件）
 npm run build      # 产出 lib/（DSH 实际加载的目录）
 ```
 
