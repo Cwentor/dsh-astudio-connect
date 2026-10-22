@@ -40,9 +40,20 @@ describe('hostIsLoopback', () => {
     expect(hostIsLoopback('[::1]:3080')).toBe(true)
   })
 
+  it('accepts every loopback address spelling the host can bind', () => {
+    // DSH 0.2.1 accepts any concrete interface literal as the web server's bind
+    // address, so `::1` and the rest of 127/8 are reachable configurations.
+    // Their Host headers must not be mistaken for a foreign origin.
+    expect(hostIsLoopback('::1')).toBe(true)
+    expect(hostIsLoopback('[0:0:0:0:0:0:0:1]:3080')).toBe(true)
+    expect(hostIsLoopback('127.0.0.2:3080')).toBe(true)
+    expect(hostIsLoopback('[::ffff:127.0.0.1]:3080')).toBe(true)
+  })
+
   it('rejects other hostnames, missing, and empty values', () => {
     expect(hostIsLoopback('evil.example')).toBe(false)
     expect(hostIsLoopback('127.0.0.1.evil.example')).toBe(false)
+    expect(hostIsLoopback('192.168.1.20:3080')).toBe(false)
     expect(hostIsLoopback(undefined)).toBe(false)
     expect(hostIsLoopback('')).toBe(false)
     expect(hostIsLoopback('  ')).toBe(false)

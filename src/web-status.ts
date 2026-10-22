@@ -14,6 +14,7 @@ import type { AStudioAuthStatus, AStudioCredentialStore } from './auth.ts'
 import type { AStudioCatalog } from './catalog.ts'
 import type { AStudioProbeRecord, AStudioProbeStore } from './probe-store.ts'
 import { ASTRO_LOCAL_IDENTITY } from './identity.ts'
+import { hostIsLoopback } from './loopback.ts'
 import { ASTRO_STATUS_PATH, type AStudioWebProbe, type AStudioWebStatus } from './status-paths.ts'
 
 /** Status store surface — the credential store plus the sign-in summary. */
@@ -67,10 +68,10 @@ export function registerAStudioStatusRoute(ctx: Context, options: AStudioStatusR
     kind: 'exact',
     path: ASTRO_STATUS_PATH,
     handler: async (req: IncomingMessage, res: ServerResponse) => {
-      // Loopback check
-      const host = req.headers.host ?? ''
-      const hostName = host.split(':')[0]?.toLowerCase() ?? ''
-      if (hostName !== '127.0.0.1' && hostName !== 'localhost') {
+      // Loopback check. The shared predicate covers every loopback spelling the
+      // host can be reached on — including `[::1]:<port>`, which a split on ':'
+      // reduced to `[` and rejected.
+      if (!hostIsLoopback(req.headers.host)) {
         res.writeHead(403, { 'Content-Type': 'application/json' })
         res.end(JSON.stringify({ error: 'forbidden' }))
         return

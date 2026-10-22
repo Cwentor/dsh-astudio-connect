@@ -3,6 +3,18 @@
  * Registers one provider route — `astudio` — while streaming, tool calls,
  * compaction, and permissions stay Harness-owned.
  *
+ * Wiring, in short: auth.ts reads `experimental_bearer_token` from AStudio's
+ * config.toml (memory only), shim.ts exposes an OpenAI-compatible endpoint on
+ * 127.0.0.1, and adapter.ts registers that endpoint as the `astudio` provider:
+ *
+ *   DSH llm seam -> pi-ai adapter -> 127.0.0.1 shim -> maas-api
+ *
+ * The model catalog and the points balances take separate read-only paths that
+ * never touch the shim (modelBearerToken and ssoSessionId respectively). Only
+ * the chat path skips AStudio's own local gateway, which is why these calls do
+ * not enter its points ledger — see the "Billing and Points" section in the
+ * README before changing anything here.
+ *
  * @module dsh-astudio-connect
  */
 

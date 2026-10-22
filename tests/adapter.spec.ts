@@ -86,9 +86,11 @@ describe('adapter model metadata', () => {
     expect(reasoningFields({ id: 'y', name: 'Y', supportsImages: false, reasoning: { supports: true }, contextWindow: 1, maxTokens: 1 }).reasoning).toBe(false)
   })
 
-  it('maps a switchable model to an off level when canDisableThinking is set', () => {
+  it('maps a switchable model to the wire value for thinking off', () => {
     // AStudio declares "none" for switchable models, which the catalog layer
-    // turns into canDisableThinking; the level map must expose it as `off`.
+    // turns into canDisableThinking. The map value is sent verbatim as
+    // `reasoning_effort`, and upstream's word for it is `none`: a literal
+    // `off` is refused by maas-api with 10005.
     const info = {
       id: 'spark-x2.6-preview',
       name: 'Spark-X2.6-Preview',
@@ -99,7 +101,7 @@ describe('adapter model metadata', () => {
     }
     const { reasoning, thinkingLevelMap } = reasoningFields(info)
     expect(reasoning).toBe(true)
-    expect(thinkingLevelMap?.off).toBe('off')
+    expect(thinkingLevelMap?.off).toBe('none')
     expect(thinkingLevelMap?.high).toBe('high')
     expect(thinkingLevelMap?.max).toBeNull()
   })

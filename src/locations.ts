@@ -14,6 +14,15 @@
  * A present-but-unreadable record is an error, never a silent fallthrough: a
  * stale older install must not win over a newer one this plugin cannot read.
  *
+ * The value names carry the release channel — `production` → `Production*`,
+ * `canary` → `Canary*`, `development` → `Development*` (`ProductionDataRoot`,
+ * `ProductionAcodeHome`, `ProductionSchemaVersion`) — and step 4's directory
+ * follows suit: `AStudio Data`, `AStudio Canary Data`, `AStudio Dev Data`.
+ *
+ * Automatic discovery is Windows-only: off Windows only the two declared
+ * sources (steps 1 and 2) apply, and the caller gets a diagnostic telling it
+ * to set `ASTUDIO_DATA_HOME`.
+ *
  * Every path here is computed in the data root's own path dialect rather than
  * the host's, so one set of inputs resolves to one set of strings on a Windows
  * desktop and on a Linux CI runner alike. See {@link AStudioPathDialect}.

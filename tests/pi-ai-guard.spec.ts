@@ -8,14 +8,23 @@
  */
 import { describe, expect, it } from 'vitest'
 import {
+  piAiVersionAccepted,
   piAiVersionWarning,
+  REQUIRED_PI_AI_MAJOR,
   REQUIRED_PI_AI_VERSION,
   resolvedPiAiVersion,
 } from '../src/pi-ai-guard.ts'
 
 describe('pi-ai resolution guard', () => {
-  it('stays silent for the version this plugin is built for', () => {
+  it('stays silent for the floor version this plugin is built for', () => {
     expect(piAiVersionWarning(REQUIRED_PI_AI_VERSION)).toBeUndefined()
+  })
+
+  it('stays silent for a newer release in the same generation', () => {
+    // The dependency is `^1.1.0`, so npm resolves whatever 1.x is current. A
+    // guard pinned to one string would warn on every healthy install.
+    expect(piAiVersionWarning('1.4.0')).toBeUndefined()
+    expect(piAiVersionWarning('1.1.1')).toBeUndefined()
   })
 
   it('stays silent when the version cannot be read', () => {
@@ -29,7 +38,9 @@ describe('pi-ai resolution guard', () => {
     // The omitted-argument path is the one production uses; it must consult the
     // resolver rather than treat "no argument" as "unreadable".
     expect(piAiVersionWarning()).toBeUndefined()
-    expect(resolvedPiAiVersion()).toBe(REQUIRED_PI_AI_VERSION)
+    const resolved = resolvedPiAiVersion()
+    expect(resolved).toBeDefined()
+    expect(piAiVersionAccepted(resolved ?? '')).toBe(true)
   })
 
   it('names both versions and a neutral remedy for an older copy', () => {
@@ -42,12 +53,29 @@ describe('pi-ai resolution guard', () => {
     expect(warning).toContain('autoInstallPeers')
   })
 
-  it('reports a newer copy too', () => {
-    // The other direction: a third-party updater moving pi-ai to 1.x (#86).
+  it('reports an older 1.x copy too', () => {
+    // Same major, below the floor DSH 0.2.1's adapter was written against
+    // (pi-ai 0.99 → 1.1.0 changed the model vocabulary underneath it).
     const warning = piAiVersionWarning('1.0.4')
     expect(warning).toBeDefined()
     expect(warning).toContain('1.0.4')
     expect(warning).toContain(REQUIRED_PI_AI_VERSION)
+  })
+
+  it('reports a copy outside the accepted generation', () => {
+    expect(piAiVersionWarning('2.0.0')).toBeDefined()
+    expect(piAiVersionWarning('0.87.1')).toBeDefined()
+  })
+
+  it('does not trust an unparsable version string', () => {
+    expect(piAiVersionAccepted('not-a-version')).toBe(false)
+    expect(piAiVersionWarning('not-a-version')).toBeDefined()
+  })
+
+  it('compares the major generation, not the string', () => {
+    expect(REQUIRED_PI_AI_MAJOR).toBe(1)
+    expect(piAiVersionAccepted(`${REQUIRED_PI_AI_MAJOR}.0.0`)).toBe(false)
+    expect(piAiVersionAccepted(`${REQUIRED_PI_AI_MAJOR}.1.0`)).toBe(true)
   })
 
   it('never names a filesystem path', () => {
@@ -80,6 +108,8 @@ describe('pi-ai resolution guard', () => {
   it('resolves a real version in this repository', () => {
     // Guards the resolver itself: if the walk-up or the specifier breaks, this
     // is where it shows, rather than in a silent no-op on every install.
-    expect(resolvedPiAiVersion()).toBe(REQUIRED_PI_AI_VERSION)
+    const resolved = resolvedPiAiVersion()
+    expect(resolved).toBeDefined()
+    expect(piAiVersionAccepted(resolved ?? '')).toBe(true)
   })
 })

@@ -5,6 +5,15 @@
  * The CLI is boot-free: it never reads the token into a shell prompt or writes
  * the AStudio config.toml. `logout` clears only the plugin's in-memory cache.
  *
+ * Hints: `doctor` reports config path/existence, sign-in state, whether the
+ * model-manager token is present, and repair hints (exit 0 only when signed in
+ * and the config file exists); `status` also reports catalog source and model
+ * count. Neither prints the token — only `tokenLength` and presence — and
+ * JWT-shaped strings in error output are replaced with `[redacted token]`.
+ * `status` always claims the "built-in" catalog source, because the live
+ * refresh only happens inside the host process; the settings card shows the
+ * host's real source instead.
+ *
  * @module dsh-astudio-connect/bin
  */
 

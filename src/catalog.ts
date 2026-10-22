@@ -58,16 +58,26 @@ export interface AStudioCatalogOptions {
   visibility?: AStudioVisibilityStore
 }
 
-/** Default built-in catalog — used when the upstream /v1/models is unavailable. */
+/**
+ * Default built-in catalog — used when the upstream /v1/models is unavailable.
+ *
+ * The effort sets mirror what model-manager reports for a live account:
+ * upstream's vocabulary is `none` (thinking off) / `high` / `max`, and a model
+ * that lists `none` is one whose thinking can be switched off. Nothing here
+ * may claim a level the gateway does not accept (a literal `off` is refused
+ * outright with 10005), so `canDisableThinking` drives the off mapping.
+ */
 export const DEFAULT_CATALOG: readonly AStudioModelInfo[] = [
-  { id: 'spark-x2.5', name: 'Spark X2.5', supportsImages: false, reasoning: { supports: true, supportedEfforts: ['low', 'high', 'max'], canDisableThinking: false }, contextWindow: 262144, maxTokens: 100000 },
+  { id: 'spark-x2.5', name: 'Spark X2.5', supportsImages: false, reasoning: { supports: true, supportedEfforts: ['high'], canDisableThinking: true }, contextWindow: 262144, maxTokens: 100000 },
   { id: 'spark-x2.5-4b', name: 'Spark X2.5 4B', supportsImages: false, reasoning: { supports: false }, contextWindow: 1048576, maxTokens: 110000 },
-  { id: 'spark-x2.6-preview', name: 'Spark X2.6 Preview', supportsImages: false, reasoning: { supports: true, supportedEfforts: ['low', 'high', 'max'], canDisableThinking: false }, contextWindow: 262144, maxTokens: 100000 },
-  { id: 'xopglm52', name: 'GLM-5.2', supportsImages: false, reasoning: { supports: false }, contextWindow: 1048576, maxTokens: 100000 },
+  { id: 'spark-x2.6-preview', name: 'Spark X2.6 Preview', supportsImages: false, reasoning: { supports: true, supportedEfforts: ['high'], canDisableThinking: true }, contextWindow: 262144, maxTokens: 100000 },
+  { id: 'spark-x2.6', name: 'Spark X2.6', supportsImages: false, reasoning: { supports: true, supportedEfforts: ['high'], canDisableThinking: true }, contextWindow: 262144, maxTokens: 100000 },
+  { id: 'spark-x2.6-4b', name: 'Spark X2.6 Lite', supportsImages: false, reasoning: { supports: true, supportedEfforts: ['high', 'max'], canDisableThinking: true }, contextWindow: 1048576, maxTokens: 110000 },
+  { id: 'xopglm52', name: 'GLM-5.2', supportsImages: false, reasoning: { supports: true, supportedEfforts: ['high', 'max'], canDisableThinking: true }, contextWindow: 1048576, maxTokens: 100000 },
   { id: 'xopdeepseekv4pro', name: 'DeepSeek V4 Pro', supportsImages: false, reasoning: { supports: false }, contextWindow: 1048576, maxTokens: 100000 },
-  { id: 'xopdeepseekv4pro0813', name: 'DeepSeek V4 Pro 0813', supportsImages: false, reasoning: { supports: false }, contextWindow: 1048576, maxTokens: 100000 },
-  { id: 'xopdsv4flash0731in', name: 'DeepSeek V4 Flash', supportsImages: false, reasoning: { supports: false }, contextWindow: 1048576, maxTokens: 100000 },
-  { id: 'astronclaw-auto', name: 'AstronClaw Auto', supportsImages: false, reasoning: { supports: false }, contextWindow: 1048576, maxTokens: 100000 },
+  { id: 'xopdeepseekv4pro0813', name: 'DeepSeek V4 Pro 0813', supportsImages: false, reasoning: { supports: true, supportedEfforts: ['high', 'max'], canDisableThinking: true }, contextWindow: 1048576, maxTokens: 100000 },
+  { id: 'xopdsv4flash0731in', name: 'DeepSeek V4 Flash', supportsImages: false, reasoning: { supports: true, supportedEfforts: ['high', 'max'], canDisableThinking: true }, contextWindow: 1048576, maxTokens: 100000 },
+  { id: 'astronclaw-auto', name: 'AstronClaw Auto', supportsImages: false, reasoning: { supports: true, supportedEfforts: ['high'], canDisableThinking: true }, contextWindow: 1048576, maxTokens: 100000 },
 ]
 
 /**

@@ -21,6 +21,7 @@ import type { IncomingMessage, ServerResponse } from 'node:http'
 import type { Context } from '@deepseek-ai/cordis'
 import type {} from '@deepseek-ai/dsh-host-webserver'
 import type { AStudioProbeService } from './probe-service.ts'
+import { hostIsLoopback } from './loopback.ts'
 import { ASTRO_PROBE_PATH } from './status-paths.ts'
 
 /** Probe control route prefix; the model id is the trailing path segment. */
@@ -46,13 +47,6 @@ export interface AStudioProbeRouteOptions {
 /** Mint the per-process probe key. */
 export function createAStudioProbeKey(): string {
   return randomBytes(24).toString('hex')
-}
-
-/** Check the Host header names a loopback interface. */
-function hostIsLoopback(host: string | undefined): boolean {
-  if (!host) return false
-  const h = host.split(':')[0]?.toLowerCase() ?? ''
-  return h === '127.0.0.1' || h === 'localhost' || h === '[::1]'
 }
 
 /** Constant-time key comparison; a length mismatch is a failure, not a crash. */

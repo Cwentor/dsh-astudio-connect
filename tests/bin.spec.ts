@@ -3,6 +3,7 @@ import { writeFileSync, unlinkSync, existsSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { run } from '../src/bin.ts'
+import { DEFAULT_CATALOG } from '../src/catalog.ts'
 
 let stdout: string[]
 let stderr: string[]
@@ -35,7 +36,9 @@ describe('run', () => {
     const body = JSON.parse(stdout.join('')) as { state: string; source: string; modelCount: number }
     expect(body.state).toBe('signed-in')
     expect(body.source).toBe('fallback')
-    expect(body.modelCount).toBe(8)
+    // The fallback roster mirrors the models model-manager reports, so the
+    // count tracks that list rather than a fixed number.
+    expect(body.modelCount).toBe(DEFAULT_CATALOG.length)
     expect(stdout.join('')).not.toContain('16c814c')
   })
 

@@ -67,6 +67,12 @@ export interface AStudioAdapter {
  * The catalog records switchability as `canDisableThinking` (AStudio declares
  * the switchable state as an effort named "none", which the catalog layer
  * translates rather than passing through as an effort value).
+ *
+ * The values here are sent verbatim as `reasoning_effort`, so they must come
+ * from upstream's own vocabulary: `none` / `high` / `max`. A literal `off`
+ * is not in it — maas-api answers the whole request with 10005 for that value
+ * (verified against the live gateway) — so "thinking off" must be spelled
+ * `none`.
  */
 export function reasoningFields(info: AStudioModelInfo): { reasoning: boolean; thinkingLevelMap?: ThinkingLevelMap } {
   const reasoning = info.reasoning
@@ -75,7 +81,7 @@ export function reasoningFields(info: AStudioModelInfo): { reasoning: boolean; t
   if (efforts === undefined || efforts.length === 0) return { reasoning: false }
   const canDisable = reasoning.canDisableThinking === true
   const map: Record<ModelThinkingLevel, string | null> = {
-    off: canDisable || efforts.includes('off') ? 'off' : null,
+    off: canDisable ? 'none' : null,
     minimal: null,
     low: efforts.includes('low') ? 'low' : null,
     medium: efforts.includes('medium') ? 'medium' : null,
@@ -99,7 +105,17 @@ export function toPiModel(info: AStudioModelInfo, baseUrl: string, providerId: s
     cost: NO_COST,
     contextWindow: info.contextWindow,
     maxTokens: info.maxTokens,
-    compat: { maxTokensField: 'max_tokens' },
+    // Keep the body inside the subset every OpenAI-compatible server
+    // implements. Left to itself, pi-ai derives `store: false` and — for a
+    // reasoning model — a `developer` instruction message from the OpenAI
+    // platform defaults. maas-api is a gateway, not that platform, and answers
+    // such a body with a bare 400 / 10005 "invalid request" that names no
+    // field, so neither is worth sending.
+    compat: {
+      maxTokensField: 'max_tokens',
+      supportsStore: false,
+      supportsDeveloperRole: false,
+    },
   } as unknown as Model<Api>
 }
 

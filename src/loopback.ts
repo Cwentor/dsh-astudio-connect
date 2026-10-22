@@ -11,8 +11,22 @@
  */
 
 import type { AddressInfo } from 'node:net'
+import { isLoopbackHost } from '@deepseek-ai/dsh-host-webserver'
 
-/** Loopback hostnames a local plugin surface may be addressed by. */
+/**
+ * The one hostname a local surface accepts that is not an IP literal.
+ * `localhost` resolves through the OS resolver, so it is policy, not address
+ * arithmetic; every IP form goes through {@link isLoopbackHost}.
+ */
+export const LOOPBACK_HOSTNAME = 'localhost'
+
+/**
+ * Loopback host values a local plugin surface may be addressed by, in Host
+ * header spelling.
+ *
+ * @deprecated Membership is a special case of {@link hostIsLoopback} and misses
+ * every other 127/8 address and IPv4-mapped form. Call the predicate instead.
+ */
 export const LOOPBACK_HOSTS = new Set(['127.0.0.1', 'localhost', '[::1]'])
 
 /** Strip the optional :port from a Host header value, IPv6-bracket aware. */
@@ -32,13 +46,21 @@ export function hostnameOfHost(host: string): string {
 }
 
 /**
- * The request's Host header must name the loopback interface. A DNS-rebinding
- * page (attacker domain re-resolved to 127.0.0.1) sends its own domain in
- * Host, so this check drops those before any routing happens.
+ * Whether a Host-header host value names the loopback interface.
+ *
+ * The address test delegates to the host webserver's own `isLoopbackHost`
+ * (DSH 0.2.1): it owns the definition — all of 127/8, `::1`, and the
+ * IPv4-mapped forms of either — and the host now accepts any concrete
+ * interface literal as its bind address, so a listener on `::1` is a
+ * supported configuration whose requests carry `[::1]:<port>` in Host.
+ * Hand-written string comparison got that spelling wrong.
+ *
+ * A DNS-rebinding page (attacker domain re-resolved to 127.0.0.1) sends its own
+ * domain in Host, so this check drops those before any routing happens.
  */
 export function hostIsLoopback(host: string | undefined): boolean {
   if (host === undefined || host.trim() === '') return false
-  return LOOPBACK_HOSTS.has(hostnameOfHost(host))
+  return addressIsLoopback(hostnameOfHost(host))
 }
 
 /**
@@ -48,8 +70,24 @@ export function hostIsLoopback(host: string | undefined): boolean {
 export function originIsLoopback(origin: string | undefined): boolean {
   if (origin === undefined || origin.trim() === '') return true
   try {
-    const { hostname } = new URL(origin)
-    return LOOPBACK_HOSTS.has(hostname) || hostname === '::1'
+    return addressIsLoopback(new URL(origin).hostname)
+  } catch {
+    return false
+  }
+}
+
+/**
+ * Classify one host spelling: `localhost`, or any loopback IP literal in Host
+ * or URL form (bracketed IPv6, zoned, or IPv4-mapped).
+ *
+ * Fails closed: a value the address parser rejects is not loopback.
+ */
+function addressIsLoopback(hostname: string): boolean {
+  if (hostname === LOOPBACK_HOSTNAME) return true
+  const bracketed = hostname.startsWith('[') && hostname.endsWith(']')
+  const bare = bracketed ? hostname.slice(1, -1) : hostname
+  try {
+    return isLoopbackHost(bare)
   } catch {
     return false
   }
