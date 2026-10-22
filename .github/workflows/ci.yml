@@ -20,6 +20,7 @@ jobs:
     # runner 上必须算出同一个字符串。只跑 Linux 时，Windows 上独有的路径 bug 和
     # 只在 Linux 上暴露的 POSIX 假设，都只能靠碰运气才发现。
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
     strategy:
       fail-fast: false
       matrix:

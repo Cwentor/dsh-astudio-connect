@@ -17,6 +17,7 @@ concurrency:
 jobs:
   publish:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
         with:
@@ -28,9 +29,11 @@ jobs:
           node-version: 24
           registry-url: https://registry.npmjs.org
 
-      # provenance / trusted publishing 需要 npm >= 11.5.1，Node 自带的版本不够新就先升上去
+      # provenance / trusted publishing 需要 npm >= 11.5.1，Node 自带的版本不够新就先升上去。
+      # 锁主版本而不是 @latest：发布链路的 npm 行为必须可预期，不能让某天新出的
+      # npm 大版本悄悄改掉 publish 参数语义。
       - name: Upgrade npm
-        run: npm install -g npm@latest
+        run: npm install -g npm@^11
 
       - name: Verify NPM_TOKEN is configured
         env:
