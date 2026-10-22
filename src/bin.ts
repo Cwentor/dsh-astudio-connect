@@ -31,6 +31,18 @@ const ASTRO_PROVIDER = 'astudio'
 export interface RunOptions {
   /** Override the AStudio config.toml path (used by tests). */
   configPath?: string
+  /**
+   * Override the catalog snapshot path (used by tests).
+   *
+   * `status` reports what a real refresh produced, which would otherwise mean
+   * reading the snapshot the running desktop app keeps in the user's DSH home.
+   */
+  catalogPath?: string
+  /**
+   * Override the AStudio data root (used by tests), which is where the
+   * model-manager session lives. Isolates a run from the signed-in desktop app.
+   */
+  dataHome?: string
 }
 
 function printHelp(): void {
@@ -61,14 +73,18 @@ function safeMessage(error: unknown): string {
 }
 
 function makeStore(options: RunOptions = {}) {
-  return createAStudioAuth(options.configPath !== undefined ? { configPath: options.configPath } : {})
+  return createAStudioAuth({
+    ...(options.configPath !== undefined ? { configPath: options.configPath } : {}),
+    ...(options.dataHome !== undefined ? { dataHome: options.dataHome } : {}),
+  })
 }
 
-function makeCatalog(store: ReturnType<typeof makeStore>) {
+function makeCatalog(store: ReturnType<typeof makeStore>, options: RunOptions = {}) {
   return createAStudioCatalog({
     upstream: { chat: async () => { throw new Error('not used') } },
     token: () => store.resolve(),
     modelBearerToken: () => store.modelBearerToken(),
+    ...(options.catalogPath !== undefined ? { catalogPath: options.catalogPath } : {}),
   })
 }
 
@@ -86,8 +102,8 @@ async function doctor(jsonOutput: boolean, options: RunOptions): Promise<number>
       present: configPresent,
     },
     modelCatalog: {
-      // Without this token the plugin still works, but it serves the built-in
-      // roster instead of the live document, so the doctor names it.
+      // Without this token no model list can be read at all: the plugin has no
+      // built-in roster to serve in its place, so the doctor names it.
       hasModelToken: status.hasModelToken === true,
     },
     hints: [
@@ -103,7 +119,7 @@ async function doctor(jsonOutput: boolean, options: RunOptions): Promise<number>
       `AStudio Connect on ${process.version}`,
       `Config file: ${configPresent ? 'present' : 'missing'} — ${status.configPath}`,
       `Sign-in state: ${report.signIn}`,
-      `Model catalog token: ${report.modelCatalog.hasModelToken ? 'present' : 'missing (built-in roster)'}`,
+      `Model catalog token: ${report.modelCatalog.hasModelToken ? 'present' : 'missing (no models will be listed)'}`,
       ...report.hints.map(hint => `Hint: ${hint}`),
       '',
     ].join('\n'))
@@ -114,7 +130,11 @@ async function doctor(jsonOutput: boolean, options: RunOptions): Promise<number>
 async function status(jsonOutput: boolean, options: RunOptions): Promise<number> {
   const store = makeStore(options)
   const authStatus = await store.status()
-  const catalog = makeCatalog(store)
+  const catalog = makeCatalog(store, options)
+  // Nothing is compiled in any more, so the reported count has to come from a
+  // real fetch: an unrefreshed catalog is empty by definition.
+  await catalog.refresh()
+  const failure = catalog.failure()
   const report = {
     schemaVersion: 1,
     package: 'dsh-astudio-connect',
@@ -122,6 +142,7 @@ async function status(jsonOutput: boolean, options: RunOptions): Promise<number>
     state: authStatus.state,
     source: catalog.source(),
     modelCount: catalog.current().length,
+    ...(failure !== undefined ? { failure } : {}),
   }
   if (jsonOutput) {
     printJson(report)
@@ -130,6 +151,7 @@ async function status(jsonOutput: boolean, options: RunOptions): Promise<number>
       `AStudio Connect: ${report.state}`,
       `Catalog source: ${report.source}`,
       `Models: ${report.modelCount}`,
+      ...failure !== undefined ? [`Catalog failure: ${failure}`] : [],
       '',
     ].join('\n'))
   }

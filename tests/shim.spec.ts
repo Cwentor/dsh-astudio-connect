@@ -8,7 +8,7 @@ import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { createAStudioAuth } from '../src/auth.ts'
 import { createAStudioUpstream } from '../src/upstream.ts'
-import { createAStudioCatalog, DEFAULT_CATALOG } from '../src/catalog.ts'
+import { createAStudioCatalog } from '../src/catalog.ts'
 import { createAStudioShim, sanitizeGatewayBody, repairChatBody, dropUnsupportedEffort } from '../src/shim.ts'
 
 const TEST_TOKEN = 'test_token_12345'
@@ -110,12 +110,14 @@ describe('createAStudioShim', () => {
     expect(body.ok).toBe(true)
   })
 
-  it('GET /v1/models returns catalog', async () => {
+  it('GET /v1/models is an empty list when the catalog has no models', async () => {
     const res = await fetch(shimUrl('/v1/models'), { headers: shimHeaders() })
     expect(res.status).toBe(200)
-    const body = (await res.json()) as { data: Array<{ id: string }> }
-    expect(body.data.length).toBeGreaterThan(0)
-    expect(body.data[0]?.id).toBe(DEFAULT_CATALOG[0]?.id)
+    const body = (await res.json()) as { object: string, data: Array<{ id: string }> }
+    // Nothing has been fetched from upstream here, and there is no built-in
+    // roster to stand in: the route answers with an empty list.
+    expect(body.object).toBe('list')
+    expect(body.data).toEqual([])
   })
 
   it('POST /v1/chat/completions non-stream forwards to upstream', async () => {

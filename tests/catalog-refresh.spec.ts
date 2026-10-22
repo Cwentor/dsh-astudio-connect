@@ -105,7 +105,7 @@ describe('catalog refresh through the model-manager endpoint', () => {
   it('sends the model bearer token, not the chat token', async () => {
     const catalog = makeCatalog()
     await catalog.refresh()
-    // A rejected token would show up as a fallback source.
+    // A rejected token would leave the catalog with no roster at all.
     expect(catalog.source()).toBe('live')
   })
 
@@ -117,7 +117,7 @@ describe('catalog refresh through the model-manager endpoint', () => {
     expect(saved).toContain('spark-x2.6-preview')
   })
 
-  it('falls back to the built-in roster when the endpoint fails', async () => {
+  it('stays empty when the endpoint cannot be reached', async () => {
     const catalog = createAStudioCatalog({
       upstream: createAStudioUpstream({ baseUrl: `${base}/v1` }),
       token: () => 'test-token-1234567890',
@@ -127,8 +127,11 @@ describe('catalog refresh through the model-manager endpoint', () => {
       identity: 'astudio-local',
     })
     await catalog.refresh()
-    expect(catalog.source()).toBe('fallback')
-    expect(catalog.current().length).toBeGreaterThan(0)
+    // No built-in roster: an unreachable endpoint means no models, reported
+    // as such rather than filled in from a compiled-in list.
+    expect(catalog.source()).toBe('empty')
+    expect(catalog.current()).toEqual([])
+    expect(catalog.failure()).toBe('network-error')
   })
 
   it('does nothing when no model bearer token is available', async () => {
@@ -141,19 +144,9 @@ describe('catalog refresh through the model-manager endpoint', () => {
       identity: 'astudio-local',
     })
     await catalog.refresh()
-    expect(catalog.source()).toBe('fallback')
+    expect(catalog.source()).toBe('empty')
+    expect(catalog.failure()).toBe('no-model-token')
     expect(requested.length).toBe(0)
-  })
-})
-
-describe('built-in roster budgets', () => {
-  it('no longer pins every model to the old 128k/8k placeholder', async () => {
-    const { DEFAULT_CATALOG } = await import('../src/catalog.ts')
-    const spark = DEFAULT_CATALOG.find(model => model.id === 'spark-x2.6-preview')
-    expect(spark?.contextWindow).toBe(262144)
-    expect(spark?.maxTokens).toBe(100000)
-    const glm = DEFAULT_CATALOG.find(model => model.id === 'xopglm52')
-    expect(glm?.contextWindow).toBe(1048576)
   })
 })
 

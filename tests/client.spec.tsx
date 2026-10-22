@@ -28,12 +28,12 @@ async function flush(): Promise<void> {
 /** A status document with the required sections. */
 function statusDoc(overrides: Partial<{
   auth: { state: 'signed-in' | 'signed-out' }
-  catalog: { source: string; modelCount: number; models: Array<{ id: string; name: string }> }
+  catalog: { source: 'live' | 'saved' | 'empty', modelCount: number, models: Array<{ id: string, name: string }>, failure?: string }
   probeKey: string
 }> = {}): unknown {
   return {
     auth: overrides.auth ?? { state: 'signed-out' },
-    catalog: overrides.catalog ?? { source: 'fallback', modelCount: 0, models: [] },
+    catalog: overrides.catalog ?? { source: 'empty', modelCount: 0, models: [] },
     visibility: { hidden: [] },
     probe: { account: '', results: [] },
     ...(overrides.probeKey !== undefined ? { probeKey: overrides.probeKey } : {}),
@@ -198,7 +198,30 @@ describe('AStudioPluginCard', () => {
 
     const json = JSON.stringify(renderer!.toJSON())
     expect(json).toContain('Not signed in')
-    expect(json).toContain('Built-in catalog')
+    // A signed-out card shows no model section at all, and never names a
+    // catalog "source" in place of one.
+    expect(json).not.toContain('No models available')
+  })
+
+  it('says no models are available instead of listing a placeholder', async () => {
+    const fetchMock = vi.fn(async () => mockResponse(statusDoc({
+      auth: { state: 'signed-in' },
+      catalog: { source: 'empty', modelCount: 0, models: [], failure: 'empty-roster' },
+    })))
+    vi.stubGlobal('fetch', fetchMock)
+
+    let renderer: ReturnType<typeof create> | null = null
+    act(() => {
+      renderer = create(<AStudioPluginCard t={t} />)
+    })
+    const header = renderer!.root.findAllByProps({ 'aria-expanded': false })
+    act(() => { header[0]!.props.onClick() })
+    await flush()
+    await flush()
+
+    const json = JSON.stringify(renderer!.toJSON())
+    expect(json).toContain('No models available')
+    expect(json).toContain(en.catalogFailureRoster)
   })
 
   it('probes with the probe key header', async () => {
@@ -207,7 +230,7 @@ describe('AStudioPluginCard', () => {
         return mockResponse(statusDoc({
           auth: { state: 'signed-in' },
           probeKey: 'test-probe-key',
-          catalog: { source: 'fallback', modelCount: 1, models: [{ id: 'spark-x2.5', name: 'Spark X2.5' }] },
+          catalog: { source: 'live', modelCount: 1, models: [{ id: 'spark-x2.5', name: 'Spark X2.5' }] },
         }))
       }
       if (url === '/astudio/probe/spark-x2.5') {

@@ -6,7 +6,6 @@ import {
   parseModelManagerCatalog,
   modelManagerUrl,
   DEFAULT_MODEL_MANAGER_BASE,
-  buildCatalogFromUpstream,
 } from '../src/model-manager.ts'
 
 const here = dirname(fileURLToPath(import.meta.url))
@@ -93,6 +92,38 @@ describe('parseModelManagerCatalog', () => {
     expect(spark?.reasoning?.supportedEfforts).toEqual(['high'])
   })
 
+  it('drops a level the gateway refuses for that model', () => {
+    const models = parseModelManagerCatalog({
+      code: 0,
+      data: {
+        models: [{
+          slug: 'spark-x2.6-4b',
+          context_window: 1048576,
+          max_output_tokens: 110000,
+          // The roster advertises `max`, but maas-api answers it with 400.
+          supported_reasoning_levels: [{ effort: 'none' }, { effort: 'high' }, { effort: 'max' }],
+        }],
+      },
+    })
+    expect(models[0]?.reasoning?.supportedEfforts).toEqual(['high'])
+    expect(models[0]?.reasoning?.canDisableThinking).toBe(true)
+  })
+
+  it('leaves a model outside the refusal table untouched', () => {
+    const models = parseModelManagerCatalog({
+      code: 0,
+      data: {
+        models: [{
+          slug: 'xopglm52',
+          context_window: 1048576,
+          max_output_tokens: 100000,
+          supported_reasoning_levels: [{ effort: 'none' }, { effort: 'high' }, { effort: 'max' }],
+        }],
+      },
+    })
+    expect(models[0]?.reasoning?.supportedEfforts).toEqual(['high', 'max'])
+  })
+
   it('drops rows without a usable context window or output budget', () => {
     const models = parseModelManagerCatalog({
       code: 0,
@@ -101,8 +132,13 @@ describe('parseModelManagerCatalog', () => {
     expect(models.map(model => model.id)).toEqual(['ok'])
   })
 
-  it('throws when the catalog resolves to nothing', () => {
-    expect(() => parseModelManagerCatalog({ code: 0, data: { models: [] } })).toThrow(/empty/i)
+  it('throws when every row is unusable', () => {
+    // Rows arrived but none survived: that is a document this parser does not
+    // understand, and must not be read as "upstream withdrew every model".
+    expect(() => parseModelManagerCatalog({
+      code: 0,
+      data: { models: [{ slug: 'broken', context_window: 0, max_output_tokens: 0 }] },
+    })).toThrow(/empty list/i)
   })
 
   it('throws when the envelope reports a failure', () => {
@@ -110,18 +146,33 @@ describe('parseModelManagerCatalog', () => {
   })
 })
 
-describe('buildCatalogFromUpstream', () => {
-  it('keeps the known roster order and appends newly discovered ids', () => {
-    const models = buildCatalogFromUpstream(
-      [{ id: 'spark-x2.6-preview', name: 'Spark-X2.6-Preview', contextWindow: 262144, maxTokens: 100000 }],
-      [
-        { id: 'spark-x2.5', name: 'Spark X2.5', contextWindow: 262144, maxTokens: 100000 },
-        { id: 'spark-x2.6-preview', name: 'Spark X2.6 Preview', contextWindow: 131072, maxTokens: 8192 },
-        { id: 'brand-new', name: 'brand-new', contextWindow: 131072, maxTokens: 8192 },
-      ],
-    )
-    expect(models.map(model => model.id)).toEqual(['spark-x2.5', 'spark-x2.6-preview', 'brand-new'])
-    expect(models.find(model => model.id === 'spark-x2.6-preview')?.contextWindow).toBe(262144)
+describe('empty and malformed rosters', () => {
+  it('parses an empty models array as an empty roster', () => {
+    // Upstream saying "no models" is an answer, not a parse failure: the
+    // catalog must be able to report an empty list truthfully.
+    expect(parseModelManagerCatalog({ code: 0, message: 'success', data: { models: [] } })).toEqual([])
+  })
+
+  it('rejects a document with no models array at all', () => {
+    // A missing/!array `models` is not the same statement as an empty one, and
+    // must not be mistaken for "upstream withdrew every model".
+    expect(() => parseModelManagerCatalog({ code: 0, message: 'success', data: {} })).toThrow(/models array/i)
+    expect(() => parseModelManagerCatalog({ code: 0, message: 'success', data: { models: 'nope' } })).toThrow(/models array/i)
+  })
+
+  it('keeps the first row when a slug repeats', () => {
+    const models = parseModelManagerCatalog({
+      code: 0,
+      message: 'success',
+      data: {
+        models: [
+          { slug: 'spark-x2.5', display_name: 'First', context_window: 262144, max_output_tokens: 100000 },
+          { slug: 'spark-x2.5', display_name: 'Second', context_window: 131072, max_output_tokens: 8192 },
+        ],
+      },
+    })
+    expect(models).toHaveLength(1)
+    expect(models[0]?.name).toBe('First')
   })
 })
 

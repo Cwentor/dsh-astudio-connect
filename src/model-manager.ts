@@ -43,6 +43,22 @@ interface RawEnvelope {
 /** Thinking levels this plugin maps onto pi-ai's scale. */
 const MAPPED_EFFORTS = new Set(['low', 'medium', 'high', 'max', 'xhigh'])
 
+/**
+ * Levels the gateway refuses for a model even though the roster lists them.
+ *
+ * `spark-x2.6-4b` is advertised with `max`, but maas-api answers
+ * `reasoning_effort: "max"` for it with `400 invalid request` (measured
+ * 2026-10-23), and `minimal` / `medium` are refused too. A level that cannot
+ * be sent is worse than an absent one: the picker offers it, the request fails
+ * outright, and only the retry path recovers. The roster is the primary source
+ * for these ladders, not an infallible one, so this is the one correction the
+ * catalog layer applies on top of it.
+ */
+const REFUSED_EFFORTS: Readonly<Record<string, readonly string[]>> = {
+  'spark-x2.5-4b': ['minimal', 'medium', 'max'],
+  'spark-x2.6-4b': ['minimal', 'medium', 'max'],
+}
+
 function positiveInteger(value: unknown): number | undefined {
   return typeof value === 'number' && Number.isFinite(value) && value > 0 ? Math.floor(value) : undefined
 }
@@ -74,6 +90,20 @@ function reasoningFor(raw: RawModel): NonNullable<AStudioModelInfo['reasoning']>
   return { supports: true, supportedEfforts: [...efforts], canDisableThinking }
 }
 
+/** Drop the efforts the gateway is known to refuse for this model id. */
+function withoutRefusedEfforts(
+  id: string,
+  reasoning: NonNullable<AStudioModelInfo['reasoning']>,
+): NonNullable<AStudioModelInfo['reasoning']> {
+  const refused = REFUSED_EFFORTS[id]
+  const efforts = reasoning.supportedEfforts
+  if (refused === undefined || efforts === undefined) return reasoning
+  const kept = efforts.filter(effort => !refused.includes(effort))
+  if (kept.length === efforts.length) return reasoning
+  if (kept.length === 0 && reasoning.canDisableThinking !== true) return { supports: false }
+  return { ...reasoning, supportedEfforts: kept }
+}
+
 /** Parse one raw model row, or undefined when it carries no usable budgets. */
 function parseModel(raw: RawModel): AStudioModelInfo | undefined {
   const id = typeof raw.slug === 'string' ? raw.slug : ''
@@ -86,14 +116,24 @@ function parseModel(raw: RawModel): AStudioModelInfo | undefined {
   if (contextWindow === undefined || maxTokens === undefined) return undefined
 
   const name = typeof raw.display_name === 'string' && raw.display_name !== '' ? raw.display_name : id
-  return { id, name, supportsImages: false, reasoning: { ...reasoningFor(raw) }, contextWindow, maxTokens }
+  return { id, name, supportsImages: false, reasoning: withoutRefusedEfforts(id, { ...reasoningFor(raw) }), contextWindow, maxTokens }
 }
 
 /**
  * Parse a model-manager payload into catalog entries.
  *
- * Throws when the envelope reports a failure or when no row survives, so a
- * refresh cannot silently replace a good roster with an empty one.
+ * Two "empty" outcomes are kept apart deliberately:
+ *
+ * - `data.models` is an empty array — upstream is saying this account has no
+ *   models. That is a real answer and parses to `[]`, which the catalog layer
+ *   surfaces as "no models available".
+ * - `data.models` is missing or not an array, or every row is unusable —
+ *   the document is not describing a roster, so this throws. A malformed
+ *   document must not be mistaken for an empty one, or a bad deploy upstream
+ *   would quietly wipe a good saved snapshot.
+ *
+ * Rows are deduplicated by id, first occurrence winning, because the restored
+ * catalog is fed straight to a picker that keys rows by id.
  */
 export function parseModelManagerCatalog(payload: unknown): AStudioModelInfo[] {
   const envelope = asRecord(payload)
@@ -106,36 +146,22 @@ export function parseModelManagerCatalog(payload: unknown): AStudioModelInfo[] {
   }
 
   const data = asRecord(envelope['data'])
-  const rawModels = Array.isArray(data?.['models']) ? data['models'] : []
+  const rawModels = data?.['models']
+  if (!Array.isArray(rawModels)) throw new Error('AStudio model catalog carried no models array')
+
   const models: AStudioModelInfo[] = []
+  const seen = new Set<string>()
   for (const rawModel of rawModels) {
     const record = asRecord(rawModel)
     if (record === undefined) continue
     const model = parseModel(record as RawModel)
-    if (model !== undefined) models.push(model)
+    if (model === undefined || seen.has(model.id)) continue
+    seen.add(model.id)
+    models.push(model)
   }
-  if (models.length === 0) throw new Error('AStudio model catalog resolved to an empty list')
+  // An empty input array is an answer; a non-empty input that survived nothing
+  // is a document this parser does not understand, and must not be read as
+  // "upstream withdrew every model".
+  if (rawModels.length > 0 && models.length === 0) throw new Error('AStudio model catalog resolved to an empty list')
   return models
-}
-
-/**
- * Merge live entries over a fallback roster.
- *
- * The fallback's order and metadata win for ids the live catalog also lists —
- * the live document is the authority for budgets, but the compiled-in names
- * keep the picker stable. Live-only ids are appended with a minimal name.
- */
-export function buildCatalogFromUpstream(
-  live: readonly AStudioModelInfo[],
-  fallback: readonly AStudioModelInfo[],
-): AStudioModelInfo[] {
-  const byId = new Map(live.map(model => [model.id, model]))
-  const merged: AStudioModelInfo[] = []
-  for (const entry of fallback) {
-    const override = byId.get(entry.id)
-    merged.push(override === undefined ? entry : override)
-    byId.delete(entry.id)
-  }
-  for (const extra of byId.values()) merged.push(extra)
-  return merged
 }

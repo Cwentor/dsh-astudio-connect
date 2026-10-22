@@ -27,6 +27,7 @@ function mockCatalog(): AStudioCatalog {
     hiddenModelIds: () => ['spark-x2.6-preview'],
     refresh: async () => {},
     fetchedAtMs: () => Date.now(),
+    failure: () => undefined,
   }
 }
 

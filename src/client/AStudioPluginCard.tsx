@@ -11,13 +11,22 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { CSSProperties } from 'react'
 import { ASTRO_PROBE_PATH, ASTRO_STATUS_PATH } from '../status-paths.ts'
-import type { AStudioWebStatus } from '../status-paths.ts'
+import type { AStudioCatalogFailure, AStudioWebStatus } from '../status-paths.ts'
 import { isAStudioWebStatus } from './status-document.ts'
 import type { AStudioSettingsKey } from './locales.ts'
 
 /** Localized copy injected by the browser-plugin registration. */
 export interface AStudioPluginCardProps {
   t: (key: AStudioSettingsKey, params?: Record<string, unknown>) => string
+}
+
+/** Card copy for each reason the catalog has no live roster. */
+const FAILURE_KEYS: Record<AStudioCatalogFailure, AStudioSettingsKey> = {
+  'no-model-token': 'catalogFailureNoToken',
+  'http-error': 'catalogFailureHttp',
+  'invalid-payload': 'catalogFailurePayload',
+  'network-error': 'catalogFailureNetwork',
+  'empty-roster': 'catalogFailureRoster',
 }
 
 /** How often the card re-reads the status document while it is open. */
@@ -173,8 +182,11 @@ export function AStudioPluginCard({ t }: AStudioPluginCardProps): React.ReactEle
       ? t('catalogLive')
       : status.catalog.source === 'saved'
         ? t('catalogSaved')
-        : t('catalogFallback')
+        // An empty catalog is explained by its own notice below; naming its
+        // "source" here would only restate that there is none.
+        : ''
   const models = status === undefined ? [] : status.catalog.models
+  const catalogFailure = status?.catalog.failure
   const probeResults = status === undefined ? [] : status.probe.results
   const signedIn = status?.auth.state === 'signed-in'
 
@@ -211,40 +223,51 @@ export function AStudioPluginCard({ t }: AStudioPluginCardProps): React.ReactEle
           {signedIn ? (
             <>
               <h3 style={headingStyle}>{t('contextHeading')}</h3>
-              <ul style={listStyle}>
-                {models.map(model => (
-                  <li key={model.id} style={bodyStyle}>
-                    <span>{model.name}</span>
-                  </li>
-                ))}
-              </ul>
+              {models.length === 0 ? (
+                <div role="status">
+                  <p style={bodyStyle}>{t('catalogEmpty')}</p>
+                  {catalogFailure === undefined ? null : <p style={bodyStyle}>{t(FAILURE_KEYS[catalogFailure])}</p>}
+                </div>
+              ) : (
+                <ul style={listStyle}>
+                  {models.map(model => (
+                    <li key={model.id} style={bodyStyle}>
+                      <span>{model.name}</span>
+                    </li>
+                  ))}
+                </ul>
+              )}
 
-              <h3 style={headingStyle}>{t('probeHeading')}</h3>
-              <div style={probeRowStyle}>
-                <span style={bodyStyle}>
-                  {probeResults.length === 0 ? t('probeNoResult') : probeResults.map(r => r.modelId).join(', ')}
-                </span>
-                <span style={probeNameStyle}>
-                  {models.map(model => {
-                    const result = probeResults.find(r => r.modelId === model.id)
-                    return (
-                      <span key={model.id} style={probeRowStyle}>
-                        <span>{model.name}</span>
-                        {result === undefined ? null
-                          : <span style={probeChipStyle}>{result.validation}: {result.efforts.join('/')}</span>}
-                        <button
-                          type="button"
-                          style={buttonStyle}
-                          disabled={busy || status?.probeKey === undefined}
-                          onClick={() => { void runProbe(model.id) }}
-                        >
-                          {result === undefined ? t('probeStart') : t('probeRedetect')}
-                        </button>
-                      </span>
-                    )
-                  })}
-                </span>
-              </div>
+              {models.length === 0 ? null : (
+                <>
+                  <h3 style={headingStyle}>{t('probeHeading')}</h3>
+                  <div style={probeRowStyle}>
+                    <span style={bodyStyle}>
+                      {probeResults.length === 0 ? t('probeNoResult') : probeResults.map(r => r.modelId).join(', ')}
+                    </span>
+                    <span style={probeNameStyle}>
+                      {models.map(model => {
+                        const result = probeResults.find(r => r.modelId === model.id)
+                        return (
+                          <span key={model.id} style={probeRowStyle}>
+                            <span>{model.name}</span>
+                            {result === undefined ? null
+                              : <span style={probeChipStyle}>{result.validation}: {result.efforts.join('/')}</span>}
+                            <button
+                              type="button"
+                              style={buttonStyle}
+                              disabled={busy || status?.probeKey === undefined}
+                              onClick={() => { void runProbe(model.id) }}
+                            >
+                              {result === undefined ? t('probeStart') : t('probeRedetect')}
+                            </button>
+                          </span>
+                        )
+                      })}
+                    </span>
+                  </div>
+                </>
+              )}
             </>
           ) : (status !== undefined && readFailure !== undefined) ? (
             <p style={errorStyle}>{readFailure}</p>

@@ -43,7 +43,8 @@ export { ASTRO_PROVIDER, ASTRO_STREAM_IDLE_TIMEOUT_MS, createAStudioAdapter } fr
 export { createAStudioShim, type AStudioShim } from './shim.ts'
 export { createAStudioAuth, readTokenFromConfig } from './auth.ts'
 export { createAStudioUpstream, DEFAULT_UPSTREAM_URL } from './upstream.ts'
-export { createAStudioCatalog, DEFAULT_CATALOG } from './catalog.ts'
+export { createAStudioCatalog } from './catalog.ts'
+export type { AStudioCatalog, AStudioCatalogFailure, AStudioCatalogSource, AStudioModelInfo } from './catalog.ts'
 export { createAStudioPointsClient, parseAStudioPointsBalance, readSsoSessionId } from './points.ts'
 
 /**

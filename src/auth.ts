@@ -209,7 +209,7 @@ export function createAStudioAuth(options: AStudioAuthOptions = {}) {
         hasModelToken,
         hints: hasModelToken
           ? []
-          : ['astron-session.json has no modelBearerToken; the model catalog will serve the built-in roster.'],
+          : ['astron-session.json has no modelBearerToken; no model list can be read, so no models will be offered.'],
       }
     },
     async logout(): Promise<void> {

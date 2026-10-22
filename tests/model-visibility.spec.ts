@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest'
-import { mkdtempSync } from 'node:fs'
+import { mkdtempSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { createAStudioCatalog } from '../src/catalog.ts'
@@ -8,7 +8,7 @@ import { createAStudioAdapter, ASTRO_PROVIDER } from '../src/adapter.ts'
 import { createAStudioShim } from '../src/shim.ts'
 import type { AStudioShim } from '../src/shim.ts'
 import type { AStudioCatalog } from '../src/catalog.ts'
-import { DEFAULT_CATALOG } from '../src/catalog.ts'
+import { SAMPLE_MODELS } from './support/models.ts'
 
 let dir: string
 let catalogPath: string
@@ -18,6 +18,13 @@ beforeEach(() => {
   dir = mkdtempSync(join(tmpdir(), 'astudio-visibility-'))
   catalogPath = join(dir, 'catalog.json')
   visibilityPath = join(dir, 'visibility.json')
+  // The plugin ships no roster, so a test that needs models has to supply an
+  // upstream answer. A saved snapshot is that: the last successful fetch, not
+  // a built-in list.
+  writeFileSync(catalogPath, JSON.stringify({
+    version: 2,
+    catalogs: { 'astudio-local': { fetchedAtMs: Date.now(), models: SAMPLE_MODELS } },
+  }), 'utf8')
 })
 
 describe('AStudio visibility store', () => {
@@ -43,6 +50,7 @@ describe('catalog visibility', () => {
       identity: 'astudio-local',
       visibility: store,
     })
+    await catalog.refresh()
     expect(catalog.current().some(m => m.id === 'xopglm52')).toBe(true)
     expect(catalog.hiddenModelIds()).toContain('xopglm52')
   })
@@ -57,11 +65,12 @@ const mockShim: AStudioShim = {
 
 function mockCatalogWithVisibility(hidden: string[]): AStudioCatalog {
   return {
-    current: () => DEFAULT_CATALOG,
+    current: () => SAMPLE_MODELS,
     refresh: async () => {},
-    source: () => 'fallback',
-    fetchedAtMs: () => undefined,
+    source: () => 'saved',
+    fetchedAtMs: () => Date.now(),
     hiddenModelIds: () => hidden,
+    failure: () => 'no-model-token',
   }
 }
 
@@ -77,6 +86,7 @@ describe('shim visibility filtering', () => {
       identity: 'astudio-local',
       visibility,
     })
+    await catalog.refresh()
     const shim = createAStudioShim({
       store: { resolve: () => 'token' },
       upstream: { chat: async () => { throw new Error('not used') } },

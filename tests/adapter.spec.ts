@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { createAStudioAdapter, ASTRO_PROVIDER, reasoningFields, toPiModel } from '../src/adapter.ts'
-import { DEFAULT_CATALOG } from '../src/catalog.ts'
+import { SAMPLE_MODELS } from './support/models.ts'
 import type { AStudioShim } from '../src/shim.ts'
 import type { AStudioCatalog } from '../src/catalog.ts'
 
@@ -14,11 +14,12 @@ const mockShim: AStudioShim = {
 
 // Mock catalog
 const mockCatalog: AStudioCatalog = {
-  current: () => DEFAULT_CATALOG,
+  current: () => SAMPLE_MODELS,
   refresh: async () => {},
-  source: () => 'fallback',
-  fetchedAtMs: () => undefined,
+  source: () => 'live',
+  fetchedAtMs: () => Date.now(),
   hiddenModelIds: () => [],
+  failure: () => undefined,
 }
 
 describe('createAStudioAdapter', () => {
@@ -30,8 +31,22 @@ describe('createAStudioAdapter', () => {
   it('lists models from catalog', async () => {
     const { adapter } = createAStudioAdapter({ shim: mockShim, catalog: mockCatalog })
     const models = await adapter.listModels(ASTRO_PROVIDER)
-    expect(models.length).toBe(DEFAULT_CATALOG.length)
-    expect(models[0]?.id).toBe(DEFAULT_CATALOG[0]?.id)
+    expect(models.length).toBe(SAMPLE_MODELS.length)
+    expect(models[0]?.id).toBe(SAMPLE_MODELS[0]?.id)
+  })
+
+  it('lists nothing when the catalog has no models', async () => {
+    // The picker is expected to render its own "no models available" notice;
+    // the adapter's part is to return an empty list rather than a stand-in.
+    const emptyCatalog: AStudioCatalog = {
+      ...mockCatalog,
+      current: () => [],
+      source: () => 'empty',
+      fetchedAtMs: () => undefined,
+      failure: () => 'empty-roster',
+    }
+    const { adapter } = createAStudioAdapter({ shim: mockShim, catalog: emptyCatalog })
+    await expect(adapter.listModels(ASTRO_PROVIDER)).resolves.toEqual([])
   })
 
   it('resolves a model by id', async () => {

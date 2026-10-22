@@ -3,8 +3,16 @@
  * surfaces. Node-free: imported by both the host bundle and the browser
  * client, so it must stay dependency-free.
  *
+ * The two catalog types below are imported `type`-only from `catalog.ts`, so
+ * nothing in this module gains a runtime import (and the browser half never
+ * pulls in the catalog's `node:fs` dependency).
+ *
  * @module dsh-astudio-connect/status-paths
  */
+
+import type { AStudioCatalogFailure, AStudioCatalogSource } from './catalog.ts'
+
+export type { AStudioCatalogFailure, AStudioCatalogSource }
 
 /** Status endpoint consumed by the browser half. */
 export const ASTRO_STATUS_PATH = '/astudio/status'
@@ -44,11 +52,18 @@ export interface AStudioWebAuth {
   tokenLength?: number
 }
 
-/** Catalog provenance section of the status document. */
+/**
+ * Catalog provenance section of the status document.
+ *
+ * `models` is empty exactly when `source` is `empty`: there is no built-in
+ * roster to fall back to, so an absent upstream answer is reported as an
+ * absent roster rather than filled in. `failure` says why, for the card copy.
+ */
 export interface AStudioWebCatalog {
-  source: 'live' | 'saved' | 'fallback'
+  source: AStudioCatalogSource
   modelCount: number
   models: Array<{ id: string; name: string }>
+  failure?: AStudioCatalogFailure
 }
 
 /** Visibility section of the status document. */

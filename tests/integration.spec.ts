@@ -16,6 +16,7 @@ import { createAStudioCatalog } from '../src/catalog.ts'
 import { createAStudioShim } from '../src/shim.ts'
 import { createAStudioAdapter } from '../src/adapter.ts'
 import { ASTRO_PROVIDER } from '../src/adapter.ts'
+import { SAMPLE_MODELS } from './support/models.ts'
 
 let mockServer: Server
 let mockPort: number
@@ -160,20 +161,31 @@ describe('integration', () => {
   it('adapter lists models from catalog', async () => {
     const store = createAStudioAuth({ configPath: testFile })
     const upstream = createAStudioUpstream({ baseUrl: `http://127.0.0.1:${mockPort}/v1` })
+    // The mock speaks chat completions only, so the roster comes from a saved
+    // upstream snapshot instead of a fetch. That is the same path a restart
+    // takes when the catalog endpoint is briefly unavailable.
+    const catalogPath = join(tmpdir(), `astudio-integration-${Date.now()}.json`)
+    writeFileSync(catalogPath, JSON.stringify({
+      version: 2,
+      catalogs: { 'astudio-local': { fetchedAtMs: Date.now(), models: SAMPLE_MODELS } },
+    }), 'utf8')
     const catalog = createAStudioCatalog({
       upstream,
       token: () => store.resolve(),
-      modelManagerBaseUrl: `http://127.0.0.1:${mockPort}/v1`,
+      modelManagerBaseUrl: 'http://127.0.0.1:1',
+      catalogPath,
     })
+    await catalog.refresh()
     const shim2 = createAStudioShim({ store, upstream, catalog })
     await shim2.ready
 
     const { adapter } = createAStudioAdapter({ shim: shim2, catalog })
     const models = await adapter.listModels(ASTRO_PROVIDER)
-    expect(models.length).toBeGreaterThan(0)
+    expect(models.length).toBe(SAMPLE_MODELS.length)
     expect(models[0]?.id).toBe('spark-x2.5')
 
     await shim2.close()
+    unlinkSync(catalogPath)
   })
 
   it('reasoning_content appears in response', async () => {

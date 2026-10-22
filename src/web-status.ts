@@ -79,6 +79,7 @@ export function registerAStudioStatusRoute(ctx: Context, options: AStudioStatusR
 
       const authStatus = await store.status()
       const models = catalog.current()
+      const failure = catalog.failure()
       const probe: AStudioWebProbe = options.probe === undefined
         ? { account: identity, results: [] }
         : buildProbe(catalog, options.probe, identity)
@@ -92,6 +93,8 @@ export function registerAStudioStatusRoute(ctx: Context, options: AStudioStatusR
           source: catalog.source(),
           modelCount: models.length,
           models: models.map(m => ({ id: m.id, name: m.name })),
+          // An empty roster is a state the card must explain, not a blank list.
+          ...(failure !== undefined ? { failure } : {}),
         },
         visibility: {
           hidden: [...catalog.hiddenModelIds()],
