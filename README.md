@@ -19,7 +19,6 @@
 - [积分余额徽标](#积分余额徽标)
 - [计费与积分](#计费与积分)
 - [设置卡片](#设置卡片)
-- [更新检查与主机心跳](#更新检查与主机心跳)
 - [DSH 版本支持](#dsh-版本支持)
 - [已知限制](#已知限制)
 - [安全说明](#安全说明)
@@ -73,7 +72,7 @@ dsh plugin --profile web add dsh-astudio-connect@latest
 - **凭证复用**：读取 AStudio 的 `experimental_bearer_token`，无需额外 OAuth 流程。
 - **标准协议**：maas-api 是标准 OpenAI 兼容协议，pi-ai 原生支持，无需协议转换。
 - **全能力桥接**：非流式、流式 SSE、工具调用、推理模型的 `reasoning_content`、上下文压缩，全部沿用 DSH 宿主自己的实现。
-- **模型目录**：取自 AStudio 自己的 model-manager 接口（即 AStudio 界面渲染的那份文档），带真实的上下文窗口与最大输出，并支持「实时 → 已保存 → 内置」三级降级。
+- **模型目录**：完全取自 AStudio 自己的 model-manager 接口（即 AStudio 界面渲染的那份文档），带真实的上下文窗口与最大输出；插件不内置任何清单，取不到就显示「无可用模型」。
 - **推理档位探测**：对未声明档位的模型，由你主动授权后发送带哨兵的最小请求，确认上游真的校验 `reasoning_effort`，再逐项确认接受哪些档位。
 - **模型显隐**：在设置卡片里勾选要在选择器中显示的模型，按登录账号分别保存；隐藏只影响可选性，不影响正在使用该模型的已有会话。
 - **余额速览**：选中 AStudio 模型时，输入框模型选择器旁显示账户的通用 / 星火两份积分余额，右侧 ↻ 手动刷新，不自动轮询。
@@ -94,28 +93,20 @@ dsh plugin --profile web add dsh-astudio-connect@latest
 
 ## 模型目录
 
-模型清单与上下文参数来自 AStudio 的 **model-manager** 接口（`GET /api/v1/model-manager/models`，生产基址 `https://astronstudio-api-volces-prod.xf-yun.com/api/v1/model-manager`），这也是 AStudio 界面本身渲染的那份文档。认证使用 `astron-session.json` 里的 `modelBearerToken`（与聊天用的 `experimental_bearer_token` 是两套凭据）。
+模型清单与上下文参数来自 AStudio 的 **model-manager** 接口。
 
 目录解析规则：
 
-- 只收 `visibility` 为 `list` 的模型，`supported_in_api` 为 `false` 的不收；
-- 上下文窗口与最大输出取自上游真实值（例如 `spark-x2.6-preview` 为 262144 / 100000）；
-- 上游 `supported_reasoning_levels` 里的 `none` 被翻译成「可关闭思考」这个能力标记，不当作一个档位；
-- 合并时内置清单的顺序与名称优先，上游独有的模型追加在末尾。
+- 只收 `visibility` 为 `list` 的模型，`supported_in_api` 为 `false` 的不收；上下文窗口或最大输出缺失的行也丢弃；
+- 上下文窗口与最大输出取自上游真实值（例如 `spark-x2.6-preview` 为 262144 / 100000）。
 
-**降级顺序**：
+**插件不内置任何模型清单**，列表完全以上游实际返回为准：
 
-1. 实时目录
-2. 上次成功快照
-3. 内置清单
+1. 实时目录 —— 上游本次返回的模型；
+2. 上次成功快照 —— 上游这次没取到（网络、鉴权、响应异常）时的上一次结果，仍是上游数据；
+3. 两者都没有 —— 列表为空。
 
-快照写在 `$DSH_HOME/.astudio-connect/catalog.json`，按本地身份保存。目录来源（`live` / `saved` / `fallback`）与抓取时间都会显示在设置卡片上。
-
-当前内置清单覆盖：
-
-- **推理模型（星火）**：`spark-x2.5`、`spark-x2.6-preview`、`spark-x2.6`、`astronclaw-auto`（可关闭思考，声明 `high`）；`spark-x2.6-4b`（可关闭思考，声明 `high` / `max`）
-- **推理模型（其他）**：`xopglm52`、`xopdeepseekv4pro0813`、`xopdsv4flash0731in`（可关闭思考，声明 `high` / `max`）
-- **对话模型**：`spark-x2.5-4b`、`xopdeepseekv4pro`
+第 3 种情况不用内置清单、占位或默认模型顶替：设置卡片显示「无可用模型」并说明原因（未登录 / 接口报错 / 响应无法解析 / 连不上 / 上游确实没列），模型选择器显示宿主的「暂无可用模型」。上游**明确返回空列表**同样按「无可用模型」处理并写入快照，否则之后一次失败的刷新会把已下架的模型顶回来。上游应答里若 `models` 字段缺失、类型不对，或所有行都不可用，则视为响应异常而不是「上游撤下了全部模型」，此时不覆盖已有快照。
 
 ## 推理档位与探测
 
@@ -183,7 +174,7 @@ AStudio 的 token 不携带稳定 uid，因此本插件只有一个本地身份 
 
 ## 计费与积分
 
-> **先说结论**：插件发起的调用**不消耗 AStudio 积分**。这不是 bug，也不是漏写——AStudio 的积分不由模型网关注销，而是桌面端按「轮次」自报用量后结算。插件是一个完全独立的进程，天生不在这条链路上。
+> **先说结论**：插件发起的调用**不消耗 AStudio 积分**。AStudio 的积分不由模型网关注销，而是桌面端按「轮次」自报用量后结算。插件是一个完全独立的进程，天生不在这条链路上。
 
 真正扣钱的是桌面端，不是 `maas-api`：
 
@@ -193,20 +184,6 @@ AStudio 的 token 不携带稳定 uid，因此本插件只有一个本地身份 
 4. `DirectPointsGateway.settle()` 带着桌面会话 Cookie `POST {studioApiBaseUrl}points/deduce-balance`，服务端据此算出 `ratedPoints`，扣 `GENERAL_POINTS` / `SPARK_POINTS`。
 
 被计入积分需要同时满足三个条件：请求属于某个 acode turn、该 turn 以 `completed` 收尾、结算请求提交成功。缺任何一条都不扣费——**只是「请求从那个网关出去」并不够**。
-
-插件的链路是 `DSH → 127.0.0.1 shim → maas-api`，三项全不满足：没有 turn、不产生 `turn.gateway-usage.updated` 事件、不写 `turn_billing_outbox`、不调 `points/deduce-balance`。所以余额恒定不动。
-
-本机可以直接验证这个判据（只读查询，不需要启动任何东西）：
-
-```sql
--- 只有 completed 的轮次留下计费记录；interrupted / error 一条都没有
-SELECT t.state, count(*), count(b.billing_turn_id)
-FROM projection_turns t
-LEFT JOIN turn_billing_outbox b ON b.billing_turn_id = t.turn_id
-GROUP BY t.state;
-```
-
-在 AStudio 数据目录下的 `userdata\state.sqlite` 上执行。
 
 ### 这不等于「免费」
 
@@ -221,7 +198,7 @@ GROUP BY t.state;
 
 侧栏「插件」面板 → AStudio Connect，一张卡片分三个分区，随插件语言切换中英文：
 
-- **账户**：登录态、配置文件路径、目录来源（实时 / 已保存 / 内置）、模型数，以及一键刷新目录。
+- **账户**：登录态、配置文件路径、目录来源（实时 / 已保存 / 无可用模型）、模型数，以及一键刷新目录。
 - **上下文**：各模型的上下文窗口与最大输出，以及模型显隐开关。
 - **探测**：未声明档位模型的探测状态与已接受档位，可手动探测 / 重新探测。
 
@@ -237,16 +214,6 @@ GROUP BY t.state;
 | `/astudio/probe/{modelId}` | `POST` | 推理档位探测 | loopback Host + Origin + 进程内探测密钥 |
 
 探测路由单独要求进程内密钥（随状态文档下发、每进程轮换、不落盘）：状态路由的 loopback 校验挡住的是 DNS 重绑定的**页面**，那并不等于授权了一个**会改状态**的操作。
-
-## 更新检查与主机心跳
-
-**更新检查**（`update.ts`）：先读 npm 的公共 dist-tags 判断是否有更新——只看 `latest` 标签，预发布通道不是本插件的发布线；确认有更新后才查 GitHub releases 补充版本说明。两次请求都有超时（8 秒）与响应体大小上限，浏览器端还会用 `parseAStudioUpdateResult` 重新校验一遍版本号、发布 URL 和区间，任何一项不符就不渲染。
-
-**主机心跳**（`host-heartbeat.ts`）：插件注册完 provider 后，在 `$DSH_HOME/.astudio-host-heartbeat.json` 写一份含 `pid` 与 `registeredAt` 的 JSON；宿主调用 `ctx.dispose()` 时删除。
-
-心跳用来区分「宿主还在跑」和「宿主崩了但文件没清」。光看 PID 不够——崩溃后操作系统可能把同一个 PID 分给无关进程，那份没清掉的心跳就会误报「宿主存活」。所以判断条件是 PID 存在**且**持有该 PID 的进程启动时间不晚于 `registeredAt`；读不到启动时间时退化为只看 PID。
-
-浏览器那一半不写文件，失败只通过 `console.error` 报告。这个不对称是有意的：宿主是承重的一半，缺心跳就明确意味着宿主没启动。
 
 ## DSH 版本支持
 
@@ -278,8 +245,8 @@ maas-api 对不合规的请求只回一句 `10005 invalid request`，不说明�
 - [ ] **插件调用不计入 AStudio 积分**：积分由桌面端按 turn 自报结算，插件不产生 turn，因此不扣费；这实际上是一条不被计量的通道，见[计费与积分](#计费与积分)。这里不提供任何补齐上报的能力。
 - [ ] **余额闸门不覆盖插件**：AStudio 自己在余额为 0 时返回 `402`，该判断在它的本地网关内；插件绕过该网关，所以余额耗尽也不会被它拦住（推断，未实测）。
 - [ ] **不做逐笔扣费明细**：账户接口只给聚合余额，徽标只能反映余额变化；插件调用则完全不产生扣费记录，更谈不上明细。
-- [ ] **不承诺长期兼容上游私有接口**：模型目录、账户接口与推理档位信息都是 AStudio 客户端自己的接口而非官方开放 API，上游改动可能使插件失效；届时插件按「上次成功目录 → 内置清单」降级并在卡片上标明来源，但不能保证长期兼容。
-- [ ] **CLI 的 `status` 不反映实时目录**：它是独立进程，不会发起实时刷新，所以只显示内置清单；宿主的真实来源看设置卡片的「账户」分区。
+- [ ] **不承诺长期兼容上游私有接口**：模型目录、账户接口与推理档位信息都是 AStudio 客户端自己的接口而非官方开放 API，上游改动可能使插件失效；届时插件按「上次成功目录」降级，连快照都没有时如实显示无可用模型，但不能保证长期兼容。
+- [ ] **CLI 的 `status` 会发起一次实时刷新**：它现在等待一次真实请求，才能如实报出目录来源与模型数；离线或未登录时报告 `empty` 与对应的失败原因。
 - [ ] **不做账号切换跟随**：与 WorkBuddy 双 variant 不同，AStudio 只有一个产品，插件不复制 variant 级能力。
 
 ## 安全说明

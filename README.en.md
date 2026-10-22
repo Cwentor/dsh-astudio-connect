@@ -19,7 +19,6 @@ An adaptation of the design in [dsh-workbuddy-connect](https://github.com/corrin
 - [Points Balance Badge](#points-balance-badge)
 - [Billing and Points](#billing-and-points)
 - [Settings Card](#settings-card)
-- [Update Check and Host Heartbeat](#update-check-and-host-heartbeat)
 - [DSH Version Support](#dsh-version-support)
 - [Known Limitations](#known-limitations)
 - [Security](#security)
@@ -73,7 +72,7 @@ Both must hold for the install to count as successful. If the group does not app
 - **Credential reuse**: reads AStudio's `experimental_bearer_token`; no separate OAuth flow.
 - **Standard protocol**: maas-api speaks standard OpenAI-compatible protocol, which pi-ai supports natively — no protocol translation.
 - **Full capability bridge**: non-streaming, streaming SSE, tool calls, `reasoning_content` from reasoning models, and context compaction all reuse the DSH host's own implementations.
-- **Model catalog**: taken from AStudio's own model-manager endpoint (the same document the AStudio UI renders), carrying real context windows and max output, with a three-tier fallback of live → saved → built-in.
+- **Model catalog**: taken entirely from AStudio's own model-manager endpoint (the same document the AStudio UI renders), carrying real context windows and max output; the plugin ships no roster of its own and reports "No models available" when it cannot fetch one.
 - **Reasoning-effort probing**: for models that declare no levels, sends a minimal sentinel-bearing request under your explicit consent, first confirming the upstream really validates `reasoning_effort`, then which levels it accepts.
 - **Model visibility**: pick which models appear in the picker from the settings card; preferences are stored per signed-in account, and hiding only affects selectability, not sessions already using that model.
 - **Balance at a glance**: with an AStudio model selected, the composer shows the account's general and Spark points balances beside the model picker, with a ↻ manual refresh and no automatic polling.
@@ -94,28 +93,20 @@ Plugin configuration is managed through DSH's plugin page (on 0.2.x: sidebar **P
 
 ## Model Catalog
 
-The model roster and context parameters come from AStudio's **model-manager** endpoint (`GET /api/v1/model-manager/models`, production base `https://astronstudio-api-volces-prod.xf-yun.com/api/v1/model-manager`), which is the same document the AStudio UI renders. Authentication uses `modelBearerToken` from `astron-session.json` — a separate credential from the chat `experimental_bearer_token`.
+The model roster and context parameters come from AStudio's **model-manager** endpoint.
 
 Catalog parsing rules:
 
-- Only models with `visibility` of `list` are kept; those with `supported_in_api` of `false` are dropped;
-- Context window and max output come from the upstream's real values (e.g. `spark-x2.6-preview` is 262144 / 100000);
-- The upstream's `none` in `supported_reasoning_levels` is translated into a "thinking can be switched off" capability flag rather than treated as an effort level;
-- When merging, the built-in roster's order and names win; models unique to the upstream are appended at the end.
+- Only models with `visibility` of `list` are kept; those with `supported_in_api` of `false` are dropped, as are rows missing a context window or output budget;
+- Context window and max output come from the upstream's real values (e.g. `spark-x2.6-preview` is 262144 / 100000).
 
-**Fallback order**:
+**The plugin ships no model roster at all.** The list is whatever upstream actually returned:
 
-1. Live catalog
-2. Last successful snapshot
-3. Built-in roster
+1. Live catalog — the models this fetch returned;
+2. Last successful snapshot — that same upstream answer, when this fetch could not be made (network, auth, malformed response);
+3. Neither — the list is empty.
 
-Snapshots are written to `$DSH_HOME/.astudio-connect/catalog.json`, stored per local identity. The catalog source (`live` / `saved` / `fallback`) and the fetch time are both shown on the settings card.
-
-The current built-in roster covers:
-
-- **Reasoning models (Spark)**: `spark-x2.5`, `spark-x2.6-preview`, `spark-x2.6`, `astronclaw-auto` (thinking switchable off, declare `high`); `spark-x2.6-4b` (thinking switchable off, declares `high` / `max`)
-- **Reasoning models (other vendors)**: `xopglm52`, `xopdeepseekv4pro0813`, `xopdsv4flash0731in` (thinking switchable off, declare `high` / `max`)
-- **Chat models**: `spark-x2.5-4b`, `xopdeepseekv4pro`
+Case 3 is not filled in with a built-in roster, a placeholder or a default model: the settings card says "No models available" and names the reason (signed out / endpoint error / unreadable response / unreachable / upstream listed none), and the model picker shows the host's own "No models available". An upstream answer that is **explicitly empty** is treated the same way and written to the snapshot — otherwise a later failed refresh would resurrect models upstream has withdrawn. A response whose `models` field is missing, of the wrong type, or whose rows are all unusable is treated as a malformed response rather than as "upstream withdrew every model", and leaves the existing snapshot untouched.
 
 ## Reasoning Effort and Probing
 
@@ -183,7 +174,7 @@ If the badge shows "Unavailable" and clicking ↻ does nothing, first confirm th
 
 ## Billing and Points
 
-> **The short version**: calls made by this plugin **do not consume AStudio points**. That is neither a bug nor an omission — AStudio's points are not charged by the model gateway. The desktop app settles them per *turn*, from usage it reports itself. The plugin is a separate process and is never on that path.
+> **The short version**: calls made by this plugin **do not consume AStudio points**. AStudio's points are not charged by the model gateway. The desktop app settles them per *turn*, from usage it reports itself. The plugin is a separate process and is never on that path.
 
 The thing that actually charges you is the desktop app, not `maas-api`:
 
@@ -193,20 +184,6 @@ The thing that actually charges you is the desktop app, not `maas-api`:
 4. `DirectPointsGateway.settle()` POSTs that report to `{studioApiBaseUrl}points/deduce-balance` with the desktop session cookie; the server rates it into `ratedPoints` and deducts `GENERAL_POINTS` / `SPARK_POINTS`.
 
 Three conditions must hold at once to be charged: the request belongs to an acode turn, that turn finishes as `completed`, and the settlement request is submitted successfully. Miss any one and nothing is charged — **merely leaving through that gateway is not enough**.
-
-The plugin's path is `DSH → 127.0.0.1 shim → maas-api`, and it satisfies none of the three: no turn, no `turn.gateway-usage.updated` event, no `turn_billing_outbox` row, no `points/deduce-balance` call. The balance therefore never moves.
-
-You can verify the rule locally with a read-only query (nothing needs to be running):
-
-```sql
--- Only completed turns leave a billing record; interrupted / error leave none
-SELECT t.state, count(*), count(b.billing_turn_id)
-FROM projection_turns t
-LEFT JOIN turn_billing_outbox b ON b.billing_turn_id = t.turn_id
-GROUP BY t.state;
-```
-
-Run it against `userdata\state.sqlite` inside AStudio's data directory.
 
 ### This is not the same as "free"
 
@@ -221,7 +198,7 @@ The badge reads AStudio's own ledger, so of course it stays still while you chat
 
 Sidebar **Plugins** panel → AStudio Connect. One card split into three sections, switching between Chinese and English with the plugin language:
 
-- **Account**: sign-in state, config file path, catalog source (live / saved / built-in), model count, and a one-click catalog refresh.
+- **Account**: sign-in state, config file path, catalog source (live / saved / no models), model count, and a one-click catalog refresh.
 - **Context**: each model's context window and max output, plus the model visibility toggles.
 - **Probe**: probe state and accepted levels for models with no declared levels, with manual probe / re-probe.
 
@@ -237,16 +214,6 @@ The card reads the status document once on mount and then every 60 seconds; all 
 | `/astudio/probe/{modelId}` | `POST` | Reasoning-effort probing | loopback Host + Origin + in-process probe key |
 
 The probe route separately requires an in-process key (handed out with the status document, rotated per process, never persisted): the status route's loopback check stops a DNS-rebinding **page**, and that is not the same as authorising a **state-changing** action.
-
-## Update Check and Host Heartbeat
-
-**Update check** (`update.ts`): reads npm's public dist-tags first to decide whether an update exists — looking only at the `latest` tag, since pre-release channels are not this plugin's release line; only once an update is confirmed does it query GitHub releases for the version notes. Both requests have a timeout (8 seconds) and a response body size cap, and the browser re-validates the version numbers, release URL and range with `parseAStudioUpdateResult` before rendering; any mismatch suppresses rendering.
-
-**Host heartbeat** (`host-heartbeat.ts`): after the plugin registers the provider, it writes a JSON document containing `pid` and `registeredAt` to `$DSH_HOME/.astudio-host-heartbeat.json`; the host deletes it on `ctx.dispose()`.
-
-The heartbeat distinguishes "the host is still running" from "the host crashed and left the file behind". Checking the PID alone is not enough — after a crash the OS may hand the same PID to an unrelated process, and that uncleared heartbeat would falsely report "host alive". So the condition is that the PID exists **and** the process holding it started no later than `registeredAt`; when the start time cannot be read, it degrades to a plain PID check.
-
-The browser half writes no files and reports failure only through `console.error`. That asymmetry is intentional: the host is the load-bearing half, and a missing heartbeat unambiguously means the host never started.
 
 ## DSH Version Support
 
@@ -278,8 +245,8 @@ A refused body is also written to `%TEMP%\dsh-astudio-connect\failed-requests\` 
 - [ ] **Plugin calls are not billed to AStudio points**: points are settled by the desktop app per turn, and the plugin creates no turn, so nothing is deducted. For better or worse this is an unmetered path — see [Billing and Points](#billing-and-points). The plugin deliberately offers no way to "report back".
 - [ ] **The balance gate does not cover the plugin**: AStudio itself returns `402` at zero balance, but that check lives inside its own local gateway, which the plugin bypasses (inferred, not tested).
 - [ ] **No per-transaction billing detail**: the account endpoint only provides aggregate balances, so the badge can only reflect balance changes; plugin calls produce no billing records at all, let alone detail.
-- [ ] **No long-term compatibility guarantee for upstream private endpoints**: the model catalog, account endpoint and reasoning-level information are the AStudio client's own interfaces rather than an official open API, and upstream changes may break the plugin. In that case it degrades through "last successful catalog → built-in roster" and labels the source on the card, but long-term compatibility cannot be promised.
-- [ ] **The CLI's `status` does not reflect the live catalog**: it is a separate process that never issues the live refresh, so it only shows the built-in roster; for the host's real source, check the "Account" section of the settings card.
+- [ ] **No long-term compatibility guarantee for upstream private endpoints**: the model catalog, account endpoint and reasoning-level information are the AStudio client's own interfaces rather than an official open API, and upstream changes may break the plugin. In that case it degrades to "last successful catalog", and says so plainly when there is no snapshot either, but long-term compatibility cannot be promised.
+- [ ] **The CLI's `status` now issues one live fetch**: it waits for a real request so it can report the actual catalog source and model count; offline or signed out, it reports `empty` with the matching failure.
 - [ ] **No account-switch following**: unlike WorkBuddy's two variants, AStudio is a single product, so the plugin does not replicate variant-level capabilities.
 
 ## Security
