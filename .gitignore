@@ -8,3 +8,4 @@ lib/
 outputs/
 docs/progress.md
 .npmrc
+.workbuddy/
