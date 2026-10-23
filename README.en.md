@@ -220,7 +220,7 @@ Both write routes require the same in-process control key (handed out with the s
 
 | Plugin version | DSH kernel it needs |
 |---|---|
-| `0.1.0` | `0.2.1-rc.2` (seam `0.2.1-rc.2`) |
+| `0.1.0` | `0.2.1-rc.2` |
 
 The host refuses to load the plugin when the kernel generation does not match. On this generation provider registration, the settings card and the points badge are covered by local unit and integration tests; the previous generation `0.2.0-rc.2` was the real-machine environment, so the exact desktop build number still needs re-confirming on the new kernel.
 
