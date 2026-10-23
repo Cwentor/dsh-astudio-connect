@@ -72,7 +72,7 @@ Both must hold for the install to count as successful. If the group does not app
 - **Credential reuse**: reads AStudio's `experimental_bearer_token`; no separate OAuth flow.
 - **Standard protocol**: maas-api speaks standard OpenAI-compatible protocol, which pi-ai supports natively — no protocol translation.
 - **Full capability bridge**: non-streaming, streaming SSE, tool calls, `reasoning_content` from reasoning models, and context compaction all reuse the DSH host's own implementations.
-- **Model catalog**: taken entirely from AStudio's own model-manager endpoint (the same document the AStudio UI renders), carrying real context windows and max output; the plugin ships no roster of its own and reports "No models available" when it cannot fetch one.
+- **Model catalog**: taken entirely from AStudio's own model-manager endpoint, carrying real context windows and max output; the plugin ships no roster of its own and reports "No models available" when it cannot fetch one.
 - **Reasoning-effort probing**: for models that declare no levels, sends a minimal sentinel-bearing request under your explicit consent, first confirming the upstream really validates `reasoning_effort`, then which levels it accepts.
 - **Model visibility**: pick which models appear in the picker from the settings card; a model you switch off leaves the picker immediately, and a session using it must select another before it can send.
 - **Balance at a glance**: with an AStudio model selected, the composer shows the account's general and Spark points balances beside the model picker, with a ↻ manual refresh and no automatic polling.
