@@ -158,6 +158,32 @@ export function apply(ctx: Context, config: Config): void {
 
     const releaseAdapter = ctx.llm.registerAdapter([ASTRO_PROVIDER], adapter)
 
+    /**
+     * Announce that the models this provider advertises have changed.
+     *
+     * `adapter.listModels` filters hidden models and reads probe results on
+     * every call, so the adapter is always current — but the **browser** is not.
+     * The model picker keeps one catalog per host generation and only reloads
+     * it on `llm/adapters-updated` (plus settings/credential writes), which is
+     * the host's "your model input changed" signal. Without this, hiding a model
+     * left the stale entry in the picker, and choosing it failed with
+     * `session/model-unavailable` — the picker offered what the catalog no
+     * longer had.
+     *
+     * Re-registering the same route set is the public way to publish that event:
+     * `replace` swaps routes in one synchronous section and announces itself
+     * like a first registration, and the route set here is unchanged.
+     */
+    const announceModelsChanged = (): void => {
+      try {
+        releaseAdapter.replace([ASTRO_PROVIDER])
+      } catch (error: unknown) {
+        // Disposed registration (teardown) or a host that no longer accepts the
+        // route: the write itself already landed, so this stays a warning.
+        ctx.logger.warn('dsh-astudio-connect: could not announce model change:', describeError(error))
+      }
+    }
+
     try {
       ctx.effect(() => () => {
         releaseAdapter()
@@ -176,7 +202,14 @@ export function apply(ctx: Context, config: Config): void {
     // throw out of this callback would surface as a "shim failed to start"
     // error for a shim that is, in fact, listening.
     try {
-      registerAStudioWebRoutes(ctx, { store, catalog, probe: probeStore, upstream, visibility })
+      registerAStudioWebRoutes(ctx, {
+        store,
+        catalog,
+        probe: probeStore,
+        upstream,
+        visibility,
+        announceModelsChanged,
+      })
     } catch (error: unknown) {
       ctx.logger.warn('dsh-astudio-connect: web routes unavailable:', describeError(error))
     }
@@ -212,12 +245,14 @@ function registerAStudioWebRoutes(
     probe: ReturnType<typeof createAStudioProbeStore>
     upstream: ReturnType<typeof createAStudioUpstream>
     visibility: ReturnType<typeof createAStudioVisibilityStore>
+    /** Re-publish `llm/adapters-updated` so open pickers reload their catalog. */
+    announceModelsChanged: () => void
   },
 ): void {
   if (ctx.get('webServer') === undefined) {
     throw new Error('the host exposes no webServer service')
   }
-  const { store, catalog, probe, upstream, visibility } = deps
+  const { store, catalog, probe, upstream, visibility, announceModelsChanged } = deps
 
   // Mint the per-process control key up front: the status card hands it to the
   // browser half, which echoes it back as `x-astudio-control-key` on every
@@ -245,14 +280,25 @@ function registerAStudioWebRoutes(
   })
   registerAStudioProbeRoute(ctx, {
     service: probeService,
-    invalidate: () => { void catalog.refresh().catch(() => {}) },
+    // A probe can add or confirm reasoning levels, which the picker renders
+    // from catalog metadata: refresh the snapshot and tell the browser to
+    // re-read it, or the effort menu keeps showing the pre-probe answer.
+    invalidate: () => {
+      void catalog.refresh().catch(() => {})
+      announceModelsChanged()
+    },
   }, controlKey)
 
-  // Register the visibility route. No `invalidate` counterpart: the adapter's
-  // `listModels` reads `catalog.hiddenModelIds()` on every call, so the write is
-  // already in effect for the next read — refreshing the roster here would
-  // spend one upstream request per toggle and gain nothing.
-  registerAStudioVisibilityRoute(ctx, { catalog, store: visibility }, controlKey)
+  // Register the visibility route. The adapter's `listModels` reads
+  // `catalog.hiddenModelIds()` on every call, so the write is already in effect
+  // for the next read — but the browser holds its own catalog and only reloads
+  // it when the host announces a change, so a hidden model otherwise stayed
+  // selectable until DSH restarted (and failed on selection).
+  registerAStudioVisibilityRoute(ctx, {
+    catalog,
+    store: visibility,
+    notify: announceModelsChanged,
+  }, controlKey)
 }
 
 /**

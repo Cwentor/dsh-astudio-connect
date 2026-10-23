@@ -68,10 +68,23 @@ function catalogWith(ids: string[]): AStudioCatalog {
   }
 }
 
+/** Counts `notify` calls, the announcement that makes the picker re-read. */
+interface Notifier {
+  calls: number
+}
+
 /** Mount the handler with a temp-dir visibility store; returns the port + store path. */
-async function mount(key: string, ids = ['spark-x2.5', 'glm-5.2']): Promise<{ port: number, path: string }> {
+async function mount(
+  key: string,
+  ids = ['spark-x2.5', 'glm-5.2'],
+  notifier?: Notifier,
+): Promise<{ port: number, path: string }> {
   const path = join(dir, 'model-visibility.json')
-  const handler = astudioVisibilityHandler({ catalog: catalogWith(ids), store: createAStudioVisibilityStore(path) }, key)
+  const handler = astudioVisibilityHandler({
+    catalog: catalogWith(ids),
+    store: createAStudioVisibilityStore(path),
+    ...notifier === undefined ? {} : { notify: () => { notifier.calls += 1 } },
+  }, key)
   return { port: await withHandler(handler), path }
 }
 
@@ -186,6 +199,58 @@ describe('astudioVisibilityHandler', () => {
     expect(res.status).toBe(200)
     const written = JSON.parse(await readFile(path, 'utf8')) as { visibility: Record<string, { hidden: string[] }> }
     expect(written.visibility[ASTRO_LOCAL_IDENTITY]?.hidden).toEqual(['spark-x2.5-4b'])
+  })
+
+  it('announces the change once, after the write lands', async () => {
+    // The adapter filters hidden models on every call, but the browser holds its
+    // own catalog snapshot and only reloads it on this announcement. Without it
+    // the picker kept listing a hidden model and failed on selection with
+    // `session/model-unavailable`.
+    const key = createControlKey()
+    const notifier: Notifier = { calls: 0 }
+    const { port } = await mount(key, ['spark-x2.5', 'glm-5.2'], notifier)
+    const res = await rawRequest(
+      port,
+      '/astudio/visibility/spark-x2.5',
+      { Host: '127.0.0.1', 'x-astudio-control-key': key },
+      hideBody(false),
+    )
+    expect(res.status).toBe(200)
+    expect(notifier.calls).toBe(1)
+  })
+
+  it('does not announce a rejected write', async () => {
+    // A 4xx means nothing changed, and each announcement costs the browser a
+    // catalog reload.
+    const key = createControlKey()
+    const notifier: Notifier = { calls: 0 }
+    const { port } = await mount(key, ['spark-x2.5'], notifier)
+    await rawRequest(port, '/astudio/visibility/spark-x2.5', { Host: '127.0.0.1' }, hideBody(false))
+    await rawRequest(port, '/astudio/visibility/not-in-roster', {
+      Host: '127.0.0.1',
+      'x-astudio-control-key': key,
+    }, hideBody(false))
+    expect(notifier.calls).toBe(0)
+  })
+
+  it('still answers 200 when the announcement throws', async () => {
+    // The preference is already durable at that point; a broken listener must
+    // not turn a saved save into an error the card would report as a failure.
+    const key = createControlKey()
+    const handler = astudioVisibilityHandler({
+      catalog: catalogWith(['spark-x2.5']),
+      store: createAStudioVisibilityStore(join(dir, 'model-visibility.json')),
+      notify: () => { throw new Error('listener exploded') },
+    }, key)
+    const port = await withHandler(handler)
+    const res = await rawRequest(
+      port,
+      '/astudio/visibility/spark-x2.5',
+      { Host: '127.0.0.1', 'x-astudio-control-key': key },
+      hideBody(false),
+    )
+    expect(res.status).toBe(200)
+    expect(JSON.parse(res.body)).toEqual({ modelId: 'spark-x2.5', visible: false })
   })
 
   it('reports a failed write instead of a false success', async () => {

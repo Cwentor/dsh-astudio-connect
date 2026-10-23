@@ -1,8 +1,9 @@
 /**
  * AStudio model visibility persistence. Hidden-model preferences are kept
- * per identity under the DSH home. Hiding is selectability-only: it filters
- * picker/model-list reads, but never makes an already-running session's model
- * unresolvable.
+ * per identity under the DSH home. Hiding removes a model from catalog reads
+ * (`listModels`), which is what the picker renders; history and request routing
+ * for an already-selected model are untouched, but a session whose selection is
+ * no longer in the catalog must pick another before it can send again.
  *
  * @module dsh-astudio-connect/visibility-store
  */

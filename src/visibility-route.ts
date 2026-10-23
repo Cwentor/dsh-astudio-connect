@@ -12,10 +12,18 @@
  *    local process can write `Host: 127.0.0.1`), and this route edits a file
  *    under the DSH home, so the caller has to prove it was handed the key.
  *
- * Hiding is selectability-only. `adapter.listModels` filters on
- * `catalog.hiddenModelIds()` and nothing else reads the list, so a model hidden
- * while a session is using it keeps serving that session — the write can never
- * strand a running conversation.
+ * Hiding filters `adapter.listModels`, which is what the picker renders. The
+ * adapter reads the hidden list on every call, so the write lands immediately —
+ * but the **browser** caches one model catalog per host generation and only
+ * reloads it when the host publishes `llm/adapters-updated`. Writing without
+ * that announcement left the hidden model in the picker, where choosing it
+ * failed with `session/model-unavailable`: the picker was offering an entry the
+ * catalog no longer contained. Hence `notify`, called once per accepted write.
+ *
+ * A hidden model that a session already has selected stays readable in history,
+ * but the selection is no longer routable, so that session has to pick another
+ * model before it can send again. That is unavoidable here: `listModels` is
+ * per provider, not per session, so it cannot exempt the one model in use.
  *
  * A model id outside the current roster is refused rather than persisted: the
  * roster is the only thing that can be shown again, so writing an id it does
@@ -48,6 +56,12 @@ export interface AStudioVisibilityRouteOptions {
   store: AStudioVisibilityStore
   /** Identity whose visibility is edited. Defaults to the local identity. */
   identity?: string
+  /**
+   * Called after a write lands, to make the browser re-read the model catalog.
+   * Kept a callback so this route stays ignorant of how the host advertises
+   * changes (see the module note).
+   */
+  notify?: () => void
 }
 
 function json(res: ServerResponse, status: number, body: unknown): void {
@@ -138,6 +152,14 @@ export function astudioVisibilityHandler(
     } catch {
       json(res, 500, { error: 'write-failed' })
       return
+    }
+
+    // The write is durable before this runs, so a listener failure must not turn
+    // a successful save into an error response.
+    try {
+      deps.notify?.()
+    } catch {
+      // Ignored: the preference is saved; the next catalog read will show it.
     }
 
     json(res, 200, { modelId, visible })

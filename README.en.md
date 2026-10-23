@@ -199,7 +199,7 @@ The badge reads AStudio's own ledger, so of course it stays still while you chat
 Sidebar **Plugins** panel → AStudio Connect. One card split into three sections, switching between Chinese and English with the plugin language:
 
 - **Account**: sign-in state, catalog source (live / saved / no models), model count, and a one-click catalog refresh.
-- **Models**: a visibility switch per model, committed by **Save** — a model switched off stops appearing in DSH's model picker. Until then the card says "n unsaved" in its header and "once saved, n of m exposed to DSH" in the body; **Discard** drops the draft.
+- **Models**: a visibility switch per model, committed by **Save** — a model switched off disappears from DSH's model picker right away. A session that was using that model has to select another one before it can send again. Until then the card says "n unsaved" in its header and "once saved, n of m exposed to DSH" in the body; **Discard** drops the draft.
 - **Probe**: probe state and accepted levels per model, with per-model probe / re-probe. A press turns the button into "Probing…" and answers with a pressed-in displacement plus a haptic tick where the platform has one.
 
 The card reads the status document once on mount and then every 60 seconds; all data comes from the same-origin `GET /astudio/status` and carries no credential material.
