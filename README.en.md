@@ -199,8 +199,8 @@ The badge reads AStudio's own ledger, so of course it stays still while you chat
 Sidebar **Plugins** panel → AStudio Connect. One card split into three sections, switching between Chinese and English with the plugin language:
 
 - **Account**: sign-in state, catalog source (live / saved / no models), model count, and a one-click catalog refresh.
-- **Models**: a visibility switch per model — a model switched off stops appearing in DSH's model picker — and an "exposing n of m to DSH" count.
-- **Probe**: probe state and accepted levels per model, with per-model probe / re-probe.
+- **Models**: a visibility switch per model, committed by **Save** — a model switched off stops appearing in DSH's model picker. Until then the card says "n unsaved" in its header and "once saved, n of m exposed to DSH" in the body; **Discard** drops the draft.
+- **Probe**: probe state and accepted levels per model, with per-model probe / re-probe. A press turns the button into "Probing…" and answers with a pressed-in displacement plus a haptic tick where the platform has one.
 
 The card reads the status document once on mount and then every 60 seconds; all data comes from the same-origin `GET /astudio/status` and carries no credential material.
 
@@ -212,7 +212,7 @@ The card reads the status document once on mount and then every 60 seconds; all 
 | `/astudio/points` | `GET` | Points balance (`?refresh=1` bypasses the cache) | loopback Host + Origin |
 | `/astudio/update` | `GET` | Version and update info | loopback Host + Origin |
 | `/astudio/probe/{modelId}` | `POST` | Reasoning-effort probing | loopback Host + Origin + in-process control key |
-| `/astudio/visibility/{modelId}` | `POST` | Model visibility | loopback Host + Origin + in-process control key |
+| `/astudio/visibility/{modelId}` | `POST` | Model visibility (one per changed model, sent by Save) | loopback Host + Origin + in-process control key |
 
 Both write routes require the same in-process control key (handed out with the status document, rotated per process, never persisted): the status route's loopback check stops a DNS-rebinding **page**, and that is not the same as authorising a **state-changing** action.
 
