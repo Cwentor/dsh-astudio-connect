@@ -95,7 +95,7 @@ dsh plugin --profile web add dsh-astudio-connect@latest
 
 模型清单与上下文参数来自 AStudio 的 **model-manager** 接口。
 
-目录解析规则：
+**目录解析规则：**
 
 - 只收 `visibility` 为 `list` 的模型，`supported_in_api` 为 `false` 的不收；上下文窗口或最大输出缺失的行也丢弃；
 - 上下文窗口与最大输出取自上游真实值（例如 `spark-x2.6-preview` 为 262144 / 100000）。

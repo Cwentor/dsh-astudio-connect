@@ -95,7 +95,7 @@ Plugin configuration is managed through DSH's plugin page (on 0.2.x: sidebar **P
 
 The model roster and context parameters come from AStudio's **model-manager** endpoint.
 
-Catalog parsing rules:
+**Catalog parsing rules:**
 
 - Only models with `visibility` of `list` are kept; those with `supported_in_api` of `false` are dropped, as are rows missing a context window or output budget;
 - Context window and max output come from the upstream's real values (e.g. `spark-x2.6-preview` is 262144 / 100000).
