@@ -29,6 +29,34 @@ export const ASTRO_STATUS_PATH = '/astudio/status'
 export const ASTRO_PROBE_PATH = '/astudio/probe'
 
 /**
+ * Model-visibility control endpoint.
+ *
+ * `POST /astudio/visibility/{modelId}` with `{ visible: boolean }` writes one
+ * model's exposure for the current identity. Same guards as the probe route
+ * (loopback Host + the in-process control key): it edits persisted preferences,
+ * so loopback alone is not enough.
+ */
+export const ASTRO_VISIBILITY_PATH = '/astudio/visibility'
+
+/**
+ * Header carrying the per-process control key on every state-changing write.
+ *
+ * Same key, same trust level, one name: the card receives it inside the status
+ * document and echoes it back here.
+ */
+export const ASTRO_CONTROL_KEY_HEADER = 'x-astudio-control-key'
+
+/**
+ * Header the card sent before visibility writes existed.
+ *
+ * Still accepted by the host: an already-loaded browser bundle outlives a host
+ * restart inside the same tab, and locking it out of its own routes would
+ * break probing until the page is reloaded. Drop it when no supported DSH
+ * release ships a client that predates {@link ASTRO_CONTROL_KEY_HEADER}.
+ */
+export const ASTRO_LEGACY_PROBE_KEY_HEADER = 'x-astudio-probe-key'
+
+/**
  * Same-origin route backing the browser's update reminder.
  *
  * Read-only like the status route, so the same loopback Host/Origin gate
@@ -89,11 +117,12 @@ export interface AStudioWebStatus {
   visibility: AStudioWebVisibility
   probe: AStudioWebProbe
   /**
-   * In-process key authorizing probe control writes. Handed to the browser half
-   * with the status document (the card is same-origin and already had to pass
-   * the loopback guard); it is never persisted and rotates per process.
+   * In-process key authorizing every control write from the card (probe and
+   * model visibility). Handed to the browser half with the status document
+   * (the card is same-origin and already had to pass the loopback guard); it is
+   * never persisted and rotates per process.
    */
-  probeKey?: string
+  controlKey?: string
 }
 
 /**

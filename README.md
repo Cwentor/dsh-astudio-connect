@@ -198,9 +198,9 @@ AStudio 的 token 不携带稳定 uid，因此本插件只有一个本地身份 
 
 侧栏「插件」面板 → AStudio Connect，一张卡片分三个分区，随插件语言切换中英文：
 
-- **账户**：登录态、配置文件路径、目录来源（实时 / 已保存 / 无可用模型）、模型数，以及一键刷新目录。
-- **上下文**：各模型的上下文窗口与最大输出，以及模型显隐开关。
-- **探测**：未声明档位模型的探测状态与已接受档位，可手动探测 / 重新探测。
+- **账户**：登录态、目录来源（实时 / 已保存 / 无可用模型）、模型数，以及一键刷新目录。
+- **模型**：每个模型的显隐开关——关掉的模型不再出现在 DSH 的模型选择器里，卡片显示「向 DSH 暴露 n / m」。
+- **探测**：每个模型的探测状态与已接受档位，可逐个探测 / 重新探测。
 
 卡片挂载时读一次状态文档，之后每 60 秒重新读取一次；数据全部来自同源的 `GET /astudio/status`，不携带任何 token 材料。
 
@@ -211,9 +211,10 @@ AStudio 的 token 不携带稳定 uid，因此本插件只有一个本地身份 
 | `/astudio/status` | `GET` | 状态文档 | loopback Host + Origin |
 | `/astudio/points` | `GET` | 积分余额（`?refresh=1` 绕过缓存） | loopback Host + Origin |
 | `/astudio/update` | `GET` | 版本与更新信息 | loopback Host + Origin |
-| `/astudio/probe/{modelId}` | `POST` | 推理档位探测 | loopback Host + Origin + 进程内探测密钥 |
+| `/astudio/probe/{modelId}` | `POST` | 推理档位探测 | loopback Host + Origin + 进程内控制密钥 |
+| `/astudio/visibility/{modelId}` | `POST` | 模型显隐 | loopback Host + Origin + 进程内控制密钥 |
 
-探测路由单独要求进程内密钥（随状态文档下发、每进程轮换、不落盘）：状态路由的 loopback 校验挡住的是 DNS 重绑定的**页面**，那并不等于授权了一个**会改状态**的操作。
+两条写路由（探测、显隐）要求同一个进程内控制密钥（随状态文档下发、每进程轮换、不落盘）：状态路由的 loopback 校验挡住的是 DNS 重绑定的**页面**，那并不等于授权了一个**会改状态**的操作。
 
 ## DSH 版本支持
 

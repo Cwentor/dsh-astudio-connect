@@ -198,9 +198,9 @@ The badge reads AStudio's own ledger, so of course it stays still while you chat
 
 Sidebar **Plugins** panel → AStudio Connect. One card split into three sections, switching between Chinese and English with the plugin language:
 
-- **Account**: sign-in state, config file path, catalog source (live / saved / no models), model count, and a one-click catalog refresh.
-- **Context**: each model's context window and max output, plus the model visibility toggles.
-- **Probe**: probe state and accepted levels for models with no declared levels, with manual probe / re-probe.
+- **Account**: sign-in state, catalog source (live / saved / no models), model count, and a one-click catalog refresh.
+- **Models**: a visibility switch per model — a model switched off stops appearing in DSH's model picker — and an "exposing n of m to DSH" count.
+- **Probe**: probe state and accepted levels per model, with per-model probe / re-probe.
 
 The card reads the status document once on mount and then every 60 seconds; all data comes from the same-origin `GET /astudio/status` and carries no credential material.
 
@@ -211,9 +211,10 @@ The card reads the status document once on mount and then every 60 seconds; all 
 | `/astudio/status` | `GET` | Status document | loopback Host + Origin |
 | `/astudio/points` | `GET` | Points balance (`?refresh=1` bypasses the cache) | loopback Host + Origin |
 | `/astudio/update` | `GET` | Version and update info | loopback Host + Origin |
-| `/astudio/probe/{modelId}` | `POST` | Reasoning-effort probing | loopback Host + Origin + in-process probe key |
+| `/astudio/probe/{modelId}` | `POST` | Reasoning-effort probing | loopback Host + Origin + in-process control key |
+| `/astudio/visibility/{modelId}` | `POST` | Model visibility | loopback Host + Origin + in-process control key |
 
-The probe route separately requires an in-process key (handed out with the status document, rotated per process, never persisted): the status route's loopback check stops a DNS-rebinding **page**, and that is not the same as authorising a **state-changing** action.
+Both write routes require the same in-process control key (handed out with the status document, rotated per process, never persisted): the status route's loopback check stops a DNS-rebinding **page**, and that is not the same as authorising a **state-changing** action.
 
 ## DSH Version Support
 

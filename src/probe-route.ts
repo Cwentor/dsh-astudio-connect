@@ -5,10 +5,12 @@
  *
  * 1. **Loopback Host**, shared with the status route. This drops DNS-rebinding
  *    pages, whose requests arrive addressed to the attacker's domain.
- * 2. **An in-process shared key**, minted per process and handed only to the
- *    same-origin card. Loopback alone is not authentication — any local process
- *    can write `Host: 127.0.0.1` — so a route that spends a request against the
- *    upstream must prove the caller was told the key.
+ * 2. **The in-process control key** (`control-key.ts`), minted per process and
+ *    handed only to the same-origin card. Loopback alone is not authentication
+ *    — any local process can write `Host: 127.0.0.1` — so a route that spends a
+ *    request against the upstream must prove the caller was told the key. The
+ *    visibility route spends no upstream request but edits persisted
+ *    preferences, so it carries the same key.
  *
  * The request body may name an `effort`; when absent, probing uses `low`. The
  * route never returns token material or the raw upstream body.
@@ -16,25 +18,22 @@
  * @module dsh-astudio-connect/probe-route
  */
 
-import { randomBytes, timingSafeEqual } from 'node:crypto'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import type { Context } from '@deepseek-ai/cordis'
 import type {} from '@deepseek-ai/dsh-host-webserver'
 import type { AStudioProbeService } from './probe-service.ts'
+import { controlKeyMatches, readControlKey } from './control-key.ts'
 import { hostIsLoopback } from './loopback.ts'
 import { ASTRO_PROBE_PATH } from './status-paths.ts'
 
 /** Probe control route prefix; the model id is the trailing path segment. */
 export { ASTRO_PROBE_PATH }
 
-/** Header carrying the in-process probe key. */
-const PROBE_KEY_HEADER = 'x-astudio-probe-key'
+/** Largest control body accepted; these payloads are a few dozen bytes. */
+const MAX_BODY_BYTES = 4096
 
 /** Default effort used when the request body names none. */
 const DEFAULT_PROBE_EFFORT = 'low'
-
-/** Largest control body accepted; these payloads are a few dozen bytes. */
-const MAX_BODY_BYTES = 4096
 
 /** Constructor dependencies. */
 export interface AStudioProbeRouteOptions {
@@ -42,19 +41,6 @@ export interface AStudioProbeRouteOptions {
   service: AStudioProbeService
   /** Drop the adapter's catalog snapshot after a probe completed. */
   invalidate?: () => void
-}
-
-/** Mint the per-process probe key. */
-export function createAStudioProbeKey(): string {
-  return randomBytes(24).toString('hex')
-}
-
-/** Constant-time key comparison; a length mismatch is a failure, not a crash. */
-function keyMatches(expected: string, presented: string | undefined): boolean {
-  if (presented === undefined || presented.length !== expected.length) return false
-  const a = Buffer.from(expected)
-  const b = Buffer.from(presented)
-  return a.length === b.length && timingSafeEqual(a, b)
 }
 
 function json(res: ServerResponse, status: number, body: unknown): void {
@@ -116,8 +102,8 @@ export function astudioProbeHandler(
       json(res, 403, { error: 'host-not-loopback' })
       return
     }
-    if (!keyMatches(key, req.headers[PROBE_KEY_HEADER] as string | undefined)) {
-      json(res, 403, { error: 'invalid-probe-key' })
+    if (!controlKeyMatches(key, readControlKey(req.headers))) {
+      json(res, 403, { error: 'invalid-control-key' })
       return
     }
     const modelId = modelFromUrl(req.url)

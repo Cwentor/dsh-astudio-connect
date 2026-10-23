@@ -34,7 +34,9 @@ import { registerAStudioUpdateRoute } from './update-route.ts'
 import { ASTRO_VERSION } from './version.ts'
 import { createAStudioProbeStore } from './probe-store.ts'
 import { createAStudioProbeService } from './probe-service.ts'
-import { createAStudioProbeKey, registerAStudioProbeRoute } from './probe-route.ts'
+import { registerAStudioProbeRoute } from './probe-route.ts'
+import { registerAStudioVisibilityRoute } from './visibility-route.ts'
+import { createControlKey } from './control-key.ts'
 import { createAStudioPointsClient } from './points.ts'
 import { registerAStudioPointsRoute } from './points-route.ts'
 import { piAiVersionWarning } from './pi-ai-guard.ts'
@@ -174,7 +176,7 @@ export function apply(ctx: Context, config: Config): void {
     // throw out of this callback would surface as a "shim failed to start"
     // error for a shim that is, in fact, listening.
     try {
-      registerAStudioWebRoutes(ctx, { store, catalog, probe: probeStore, upstream })
+      registerAStudioWebRoutes(ctx, { store, catalog, probe: probeStore, upstream, visibility })
     } catch (error: unknown) {
       ctx.logger.warn('dsh-astudio-connect: web routes unavailable:', describeError(error))
     }
@@ -209,20 +211,21 @@ function registerAStudioWebRoutes(
     catalog: AStudioCatalog
     probe: ReturnType<typeof createAStudioProbeStore>
     upstream: ReturnType<typeof createAStudioUpstream>
+    visibility: ReturnType<typeof createAStudioVisibilityStore>
   },
 ): void {
   if (ctx.get('webServer') === undefined) {
     throw new Error('the host exposes no webServer service')
   }
-  const { store, catalog, probe, upstream } = deps
+  const { store, catalog, probe, upstream, visibility } = deps
 
-  // Mint the per-process probe key up front: the status card hands it to the
-  // browser half, which echoes it back as `x-astudio-probe-key` on probe
-  // control writes.
-  const probeKey = createAStudioProbeKey()
+  // Mint the per-process control key up front: the status card hands it to the
+  // browser half, which echoes it back as `x-astudio-control-key` on every
+  // state-changing write (probe, model visibility).
+  const controlKey = createControlKey()
 
   // Register the status route on the host web server.
-  registerAStudioStatusRoute(ctx, { store, catalog, probe, probeKey })
+  registerAStudioStatusRoute(ctx, { store, catalog, probe, controlKey })
 
   // Register the update route on the host web server.
   registerAStudioUpdateRoute(ctx, { currentVersion: ASTRO_VERSION })
@@ -243,7 +246,13 @@ function registerAStudioWebRoutes(
   registerAStudioProbeRoute(ctx, {
     service: probeService,
     invalidate: () => { void catalog.refresh().catch(() => {}) },
-  }, probeKey)
+  }, controlKey)
+
+  // Register the visibility route. No `invalidate` counterpart: the adapter's
+  // `listModels` reads `catalog.hiddenModelIds()` on every call, so the write is
+  // already in effect for the next read — refreshing the roster here would
+  // spend one upstream request per toggle and gain nothing.
+  registerAStudioVisibilityRoute(ctx, { catalog, store: visibility }, controlKey)
 }
 
 /**

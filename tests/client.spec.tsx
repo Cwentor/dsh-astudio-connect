@@ -6,8 +6,17 @@ import { en } from '../src/client/locales.ts'
 import { AStudioConfigPage } from '../src/client/AStudioConfigPage.tsx'
 import { AStudioPluginCard } from '../src/client/AStudioPluginCard.tsx'
 
-/** A translate function that returns the English dictionary value, falling back to the key. */
-const t = (key: string): string => en[key as keyof typeof en] ?? key
+/**
+ * A translate function that returns the English dictionary value, falling back
+ * to the key. Interpolates `{name}` params the way the host's `t` does, so
+ * assertions can read the rendered sentence rather than its template.
+ */
+const t = (key: string, params?: Record<string, unknown>): string => {
+  const raw = en[key as keyof typeof en] ?? key
+  if (params === undefined) return raw
+  return raw.replace(/\{(\w+)\}/g, (placeholder, name: string) =>
+    name in params ? String(params[name]) : placeholder)
+}
 
 /** Build a minimal fetch Response stand-in. */
 function mockResponse(body: unknown, ok = true, status = 200): Response {
@@ -29,14 +38,15 @@ async function flush(): Promise<void> {
 function statusDoc(overrides: Partial<{
   auth: { state: 'signed-in' | 'signed-out' }
   catalog: { source: 'live' | 'saved' | 'empty', modelCount: number, models: Array<{ id: string, name: string }>, failure?: string }
-  probeKey: string
+  controlKey: string
+  hidden: string[]
 }> = {}): unknown {
   return {
     auth: overrides.auth ?? { state: 'signed-out' },
     catalog: overrides.catalog ?? { source: 'empty', modelCount: 0, models: [] },
-    visibility: { hidden: [] },
+    visibility: { hidden: overrides.hidden ?? [] },
     probe: { account: '', results: [] },
-    ...(overrides.probeKey !== undefined ? { probeKey: overrides.probeKey } : {}),
+    ...(overrides.controlKey !== undefined ? { controlKey: overrides.controlKey } : {}),
   }
 }
 
@@ -229,7 +239,7 @@ describe('AStudioPluginCard', () => {
       if (url === '/astudio/status') {
         return mockResponse(statusDoc({
           auth: { state: 'signed-in' },
-          probeKey: 'test-probe-key',
+          controlKey: 'test-control-key',
           catalog: { source: 'live', modelCount: 1, models: [{ id: 'spark-x2.5', name: 'Spark X2.5' }] },
         }))
       }
@@ -259,6 +269,104 @@ describe('AStudioPluginCard', () => {
     const probeCall = fetchMock.mock.calls.find(call => call[0] === '/astudio/probe/spark-x2.5')
     expect(probeCall).toBeDefined()
     const init = probeCall![1] as { headers: Record<string, string> }
-    expect(init.headers['x-astudio-probe-key']).toBe('test-probe-key')
+    expect(init.headers['x-astudio-control-key']).toBe('test-control-key')
+  })
+
+  it('renders one switch per model, off for the hidden ones', async () => {
+    const fetchMock = vi.fn(async () => mockResponse(statusDoc({
+      auth: { state: 'signed-in' },
+      controlKey: 'test-control-key',
+      hidden: ['spark-x2.5'],
+      catalog: {
+        source: 'live',
+        modelCount: 2,
+        models: [{ id: 'glm-5.2', name: 'GLM-5.2' }, { id: 'spark-x2.5', name: 'Spark-X2.5' }],
+      },
+    })))
+    vi.stubGlobal('fetch', fetchMock)
+
+    let renderer: ReturnType<typeof create> | null = null
+    act(() => {
+      renderer = create(<AStudioPluginCard t={t} />)
+    })
+    const header = renderer!.root.findAllByProps({ 'aria-expanded': false })
+    act(() => { header[0]!.props.onClick() })
+    await flush()
+    await flush()
+
+    const switches = renderer!.root.findAllByType('input')
+    expect(switches.map(box => box.props.checked)).toEqual([true, false])
+    // The section is called "Models" and reports the exposed count, not the
+    // roster size: hiding a model has to be visible as a number.
+    const json = JSON.stringify(renderer!.toJSON())
+    expect(json).toContain(en.modelHeading)
+    expect(json).toContain('Exposing 1 of 2 to DSH')
+    expect(json).not.toContain(en.modelNoneExposed)
+  })
+
+  it('hides a model through the visibility route and re-reads the status', async () => {
+    const calls: Array<{ url: string, init: { method?: string, headers?: Record<string, string>, body?: string } }> = []
+    const fetchMock = vi.fn(async (
+      url: string,
+      init: { method?: string, headers?: Record<string, string>, body?: string },
+    ) => {
+      calls.push({ url, init })
+      if (url === '/astudio/status') {
+        return mockResponse(statusDoc({
+          auth: { state: 'signed-in' },
+          controlKey: 'test-control-key',
+          catalog: { source: 'live', modelCount: 1, models: [{ id: 'spark-x2.5', name: 'Spark-X2.5' }] },
+        }))
+      }
+      if (url === '/astudio/visibility/spark-x2.5') return mockResponse({ modelId: 'spark-x2.5', visible: false })
+      return mockResponse({ error: 'unknown' }, false, 404)
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    let renderer: ReturnType<typeof create> | null = null
+    act(() => {
+      renderer = create(<AStudioPluginCard t={t} />)
+    })
+    const header = renderer!.root.findAllByProps({ 'aria-expanded': false })
+    act(() => { header[0]!.props.onClick() })
+    await flush()
+    await flush()
+
+    const box = renderer!.root.findAllByType('input')[0]!
+    await act(async () => {
+      box.props.onChange({ target: { checked: false } })
+    })
+    await flush()
+    await flush()
+
+    const write = calls.find(call => call.url === '/astudio/visibility/spark-x2.5')
+    expect(write).toBeDefined()
+    expect(write!.init.method).toBe('POST')
+    expect(write!.init.headers?.['x-astudio-control-key']).toBe('test-control-key')
+    expect(JSON.parse(write!.init.body ?? 'null')).toEqual({ visible: false })
+    // A write is followed by a read: the host, not the click, is the authority.
+    expect(calls.filter(call => call.url === '/astudio/status').length).toBeGreaterThanOrEqual(2)
+  })
+
+  it('warns when every model is hidden', async () => {
+    const fetchMock = vi.fn(async () => mockResponse(statusDoc({
+      auth: { state: 'signed-in' },
+      controlKey: 'test-control-key',
+      hidden: ['spark-x2.5'],
+      catalog: { source: 'live', modelCount: 1, models: [{ id: 'spark-x2.5', name: 'Spark-X2.5' }] },
+    })))
+    vi.stubGlobal('fetch', fetchMock)
+
+    let renderer: ReturnType<typeof create> | null = null
+    act(() => {
+      renderer = create(<AStudioPluginCard t={t} />)
+    })
+    const header = renderer!.root.findAllByProps({ 'aria-expanded': false })
+    act(() => { header[0]!.props.onClick() })
+    await flush()
+    await flush()
+
+    const json = JSON.stringify(renderer!.toJSON())
+    expect(json).toContain(en.modelNoneExposed)
   })
 })

@@ -31,10 +31,11 @@ export interface AStudioStatusRouteOptions {
   /** Identity used for the probe summary. Defaults to the local identity. */
   identity?: string
   /**
-   * In-process probe key handed to the browser card, which echoes it back as
-   * `x-astudio-probe-key` on probe POSTs. Absent when probing is unwired.
+   * In-process control key handed to the browser card, which echoes it back as
+   * `x-astudio-control-key` on every control write (probe, model visibility).
+   * Absent when the write routes are unwired.
    */
-  probeKey?: string
+  controlKey?: string
 }
 
 /** Assemble the probe summary for one identity from the live catalog. */
@@ -100,7 +101,7 @@ export function registerAStudioStatusRoute(ctx: Context, options: AStudioStatusR
           hidden: [...catalog.hiddenModelIds()],
         },
         probe,
-        ...(options.probeKey !== undefined ? { probeKey: options.probeKey } : {}),
+        ...(options.controlKey !== undefined ? { controlKey: options.controlKey } : {}),
       }
 
       res.writeHead(200, { 'Content-Type': 'application/json' })

@@ -3,7 +3,8 @@ import { createServer, type IncomingMessage, type ServerResponse } from 'node:ht
 import type { Server } from 'node:http'
 import type { AddressInfo } from 'node:net'
 import { request } from 'node:http'
-import { astudioProbeHandler, createAStudioProbeKey } from '../src/probe-route.ts'
+import { astudioProbeHandler } from '../src/probe-route.ts'
+import { createControlKey } from '../src/control-key.ts'
 import type { AStudioProbeService } from '../src/probe-service.ts'
 import type { ProbeOutcome } from '../src/probe.ts'
 
@@ -58,7 +59,7 @@ function mockService(outcome: ProbeOutcome) {
 
 describe('astudioProbeHandler', () => {
   it('rejects non-POST requests', async () => {
-    const key = createAStudioProbeKey()
+    const key = createControlKey()
     const { service } = mockService({ state: 'ok', efforts: ['low'] })
     const port = await withHandler(astudioProbeHandler({ service }, key))
     const res = await rawRequest(port, '/astudio/probe/spark-x2.5', { Host: '127.0.0.1' }, undefined, 'GET')
@@ -66,43 +67,43 @@ describe('astudioProbeHandler', () => {
   })
 
   it('rejects non-loopback Host', async () => {
-    const key = createAStudioProbeKey()
+    const key = createControlKey()
     const { service } = mockService({ state: 'ok', efforts: ['low'] })
     const port = await withHandler(astudioProbeHandler({ service }, key))
     const res = await rawRequest(port, '/astudio/probe/spark-x2.5', { Host: 'evil.example.com' })
     expect(res.status).toBe(403)
   })
 
-  it('rejects a missing probe key', async () => {
-    const key = createAStudioProbeKey()
+  it('rejects a missing control key', async () => {
+    const key = createControlKey()
     const { service } = mockService({ state: 'ok', efforts: ['low'] })
     const port = await withHandler(astudioProbeHandler({ service }, key))
     const res = await rawRequest(port, '/astudio/probe/spark-x2.5', { Host: '127.0.0.1' })
     expect(res.status).toBe(403)
   })
 
-  it('rejects a wrong probe key', async () => {
-    const key = createAStudioProbeKey()
+  it('rejects a wrong control key', async () => {
+    const key = createControlKey()
     const { service } = mockService({ state: 'ok', efforts: ['low'] })
     const port = await withHandler(astudioProbeHandler({ service }, key))
-    const res = await rawRequest(port, '/astudio/probe/spark-x2.5', { Host: '127.0.0.1', 'x-astudio-probe-key': 'wrong-key' })
+    const res = await rawRequest(port, '/astudio/probe/spark-x2.5', { Host: '127.0.0.1', 'x-astudio-control-key': 'wrong-key' })
     expect(res.status).toBe(403)
   })
 
   it('returns 404 when the model id is missing', async () => {
-    const key = createAStudioProbeKey()
+    const key = createControlKey()
     const { service } = mockService({ state: 'ok', efforts: ['low'] })
     const port = await withHandler(astudioProbeHandler({ service }, key))
-    const res = await rawRequest(port, '/astudio/probe', { Host: '127.0.0.1', 'x-astudio-probe-key': key })
+    const res = await rawRequest(port, '/astudio/probe', { Host: '127.0.0.1', 'x-astudio-control-key': key })
     expect(res.status).toBe(404)
   })
 
   it('probes a model and returns the observation', async () => {
-    const key = createAStudioProbeKey()
+    const key = createControlKey()
     const { service, calls } = mockService({ state: 'ok', validation: 'validating', efforts: ['high'] })
     let invalidated = false
     const port = await withHandler(astudioProbeHandler({ service, invalidate: () => { invalidated = true } }, key))
-    const res = await rawRequest(port, '/astudio/probe/spark-x2.5', { Host: '127.0.0.1', 'x-astudio-probe-key': key })
+    const res = await rawRequest(port, '/astudio/probe/spark-x2.5', { Host: '127.0.0.1', 'x-astudio-control-key': key })
     expect(res.status).toBe(200)
     const body = JSON.parse(res.body) as { state: string; validation?: string; efforts: string[] }
     expect(body.state).toBe('ok')
@@ -113,24 +114,36 @@ describe('astudioProbeHandler', () => {
   })
 
   it('honors an effort supplied in the body', async () => {
-    const key = createAStudioProbeKey()
+    const key = createControlKey()
     const { service, calls } = mockService({ state: 'ok', efforts: ['max'] })
     const port = await withHandler(astudioProbeHandler({ service }, key))
     const res = await rawRequest(
       port,
       '/astudio/probe/spark-x2.5',
-      { Host: '127.0.0.1', 'x-astudio-probe-key': key, 'Content-Type': 'application/json' },
+      { Host: '127.0.0.1', 'x-astudio-control-key': key, 'Content-Type': 'application/json' },
       JSON.stringify({ effort: 'max' }),
     )
     expect(res.status).toBe(200)
     expect(calls[0]?.effort).toBe('max')
   })
 
-  it('does not leak token material', async () => {
-    const key = createAStudioProbeKey()
-    const { service } = mockService({ state: 'ok', efforts: ['low'] })
+  it('still accepts the pre-visibility probe key header', async () => {
+    // A browser bundle loaded before the header was renamed outlives a host
+    // restart inside the same tab; rejecting it would break probing until the
+    // page reloads. Same secret, two names.
+    const key = createControlKey()
+    const { service, calls } = mockService({ state: 'ok', efforts: ['low'] })
     const port = await withHandler(astudioProbeHandler({ service }, key))
     const res = await rawRequest(port, '/astudio/probe/spark-x2.5', { Host: '127.0.0.1', 'x-astudio-probe-key': key })
+    expect(res.status).toBe(200)
+    expect(calls).toHaveLength(1)
+  })
+
+  it('does not leak token material', async () => {
+    const key = createControlKey()
+    const { service } = mockService({ state: 'ok', efforts: ['low'] })
+    const port = await withHandler(astudioProbeHandler({ service }, key))
+    const res = await rawRequest(port, '/astudio/probe/spark-x2.5', { Host: '127.0.0.1', 'x-astudio-control-key': key })
     expect(res.body).not.toContain('token')
     expect(res.body).not.toContain('Authorization')
   })
