@@ -2,7 +2,7 @@
   "name": "dsh-astudio-connect",
   "displayName": "DSH AStudio Connect",
   "description": "将 AStudio 应用中已登录的模型复用到 DeepSeek Harness — bring AStudio app models into DeepSeek Harness with zero configuration.",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "author": "astudio-connect",
   "keywords": [
     "dsh-plugin",
