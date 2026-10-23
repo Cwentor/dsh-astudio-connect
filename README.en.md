@@ -74,9 +74,9 @@ Both must hold for the install to count as successful. If the group does not app
 - **Full capability bridge**: non-streaming, streaming SSE, tool calls, `reasoning_content` from reasoning models, and context compaction all reuse the DSH host's own implementations.
 - **Model catalog**: taken entirely from AStudio's own model-manager endpoint (the same document the AStudio UI renders), carrying real context windows and max output; the plugin ships no roster of its own and reports "No models available" when it cannot fetch one.
 - **Reasoning-effort probing**: for models that declare no levels, sends a minimal sentinel-bearing request under your explicit consent, first confirming the upstream really validates `reasoning_effort`, then which levels it accepts.
-- **Model visibility**: pick which models appear in the picker from the settings card; preferences are stored per signed-in account, and hiding only affects selectability, not sessions already using that model.
+- **Model visibility**: pick which models appear in the picker from the settings card; a model you switch off leaves the picker immediately, and a session using it must select another before it can send.
 - **Balance at a glance**: with an AStudio model selected, the composer shows the account's general and Spark points balances beside the model picker, with a ↻ manual refresh and no automatic polling.
-- **Settings card**: the AStudio Connect card under the sidebar Plugins panel, split into Account / Context / Probe sections, with manual catalog refresh and probing.
+- **Settings card**: the AStudio Connect card under the sidebar Plugins panel, split into Account / Models / Probe sections, with manual catalog refresh and per-model probing.
 - **Command-line diagnostics**: `status`, `doctor` and `logout` — never emit credential material.
 - **Update check**: compares against npm's public dist-tags to decide whether a newer release exists, and enriches with GitHub release notes.
 
