@@ -1,10 +1,12 @@
 /**
- * Browser half: the AStudio settings card and the composer points badge.
+ * Browser half: the AStudio configuration card and the points section of
+ * DSH's Settings page.
  *
- * Configuration surface: DSH 0.2.x's Plugins page, whose
- * `plugins.bundle.config` slot carries one bundle-keyed entry. `ctx.slots.inject`
- * follows the slot's declaration lifetime — the callback runs where the slot is
- * declared and simply never runs where it is not.
+ * Two surfaces, both owned by DSH and reached through slots: the Plugins page's
+ * `plugins.bundle.config` slot carries one bundle-keyed entry, and the Settings
+ * navigation carries one `settings.section` row. `ctx.slots.inject` follows the
+ * slot's declaration lifetime — the callback runs where the slot is declared and
+ * simply never runs where it is not.
  *
  * @module dsh-astudio-connect/client
  */
@@ -16,14 +18,10 @@ import type { Context as ClientContext } from '@deepseek-ai/cordis'
 import type {} from '@deepseek-ai/dsh-client-ui-plugin-manager/client'
 import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
 import type {} from '@deepseek-ai/dsh-client-locale/client'
-// Type-only: brings the `ctx.modelDirectories` module augmentation. It is the
-// only service the points badge resolves its session's model selection through,
-// and it declares no slot of its own.
-import type {} from '@deepseek-ai/dsh-client-ui-model-selection/client'
 import type {} from '@deepseek-ai/dsh-client-ui-slots'
 import { AStudioConfigPage } from './AStudioConfigPage.tsx'
 import type { AStudioPluginCardProps } from './AStudioPluginCard.tsx'
-import { AStudioPointsBadge } from './AStudioPointsBadge.tsx'
+import { AStudioPointsSection } from './AStudioPointsSection.tsx'
 import { en, zh } from './locales.ts'
 import type { AStudioSettingsKey } from './locales.ts'
 
@@ -34,17 +32,17 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
   }
   interface SlotMap {
     /**
-     * Compile-time mirror of the composer tool row this bundle contributes the
-     * points badge to.
+     * One row in DSH's Settings navigation, plus the page it opens.
      *
-     * Declared here because the slot is owned by `dsh-client-ui-conversation`,
-     * which this bundle registers into rather than depends on at value level.
-     * The list kind is load-bearing — the badge sits BESIDE the model selector,
-     * and `conversation.input.model` is a single seat already occupied by it.
+     * Declared here because the slot is owned by the Settings shell
+     * (`dsh-client-ui-settings-general`), which this bundle registers into
+     * rather than depends on at value level. `owner` is what the shell passes at
+     * its render site: `close` closes the panel, unused by this section.
      */
-    'conversation.input.right': {
+    'settings.section': {
       kind: 'list'
-      scope: 'session'
+      scope: 'root'
+      owner: { close: () => void }
     }
   }
 }
@@ -137,31 +135,23 @@ export function apply(ctx: ClientContext): void {
     ))
   })
 
-  // SEAM TWO — the composer tool row, beside the model selector. The badge
-  // resolves the session's live selection through the host's model directories,
-  // so it appears only while an AStudio model is selected. `conversation.input.model`
-  // is a single seat already occupied by the model selector itself, which is why
-  // this contributes to the additive `input.right` list instead.
-  guardClientContribution('composer points badge', () => {
-    ctx.inject(['modelDirectories'], scope => {
-      guardClientContribution('composer points badge', () => {
-        scope.slots.inject('conversation.input.right', () => (
-          guardClientContribution('composer points badge', () => scope.slots.register({
-            name: 'conversation.input.right',
-            id: 'astudio-points',
-            order: 10,
-            // The host hands the session id as a plain string; the directory
-            // resolver takes the branded `SessionId` it was keyed by.
-            inject: (sessionId: string) => ({
-              directory: scope.modelDirectories.directoryFor(
-                sessionId as Parameters<typeof scope.modelDirectories.directoryFor>[0],
-              ).store,
-              t,
-            }),
-          }, AStudioPointsBadge)) ?? NOOP_DISPOSER
-        ))
-      })
-    })
+  // SEAM TWO — DSH's Settings navigation. One row, ordered last so it appends to
+  // the list rather than displacing a native section. The shell mounts a single
+  // section at a time, so this is where the balance, the refresh and the daily
+  // claim live: account state belongs to a page, not to a session's composer.
+  guardClientContribution('settings points section', () => {
+    ctx.slots.inject('settings.section', () => (
+      guardClientContribution('settings points section', () => ctx.slots.register({
+        name: 'settings.section',
+        id: 'astudio-points',
+        // Below every native section (account -10, models 10, plugins 15) and
+        // below the third-party rows that claim 100, so this appends.
+        order: 1000,
+        // A thunk: the nav row follows the active language without re-registering.
+        label: () => t('pointsNav'),
+        locale: namespace,
+      }, AStudioPointsSection)) ?? NOOP_DISPOSER
+    ))
   })
 }
 

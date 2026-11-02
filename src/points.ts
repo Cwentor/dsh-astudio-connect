@@ -35,7 +35,7 @@ export const ASTRO_POINTS_CACHE_MS = 30_000
 /** Upstream code AStudio returns (HTTP 200) for a dead session. */
 const UPSTREAM_SESSION_INVALID_CODE = 80000
 
-/** A read the badge can present. */
+/** A read the points surface can present. */
 export type AStudioPointsResult = AStudioWebPoints
 
 /** Options for {@link createAStudioPointsClient}. */
@@ -55,7 +55,7 @@ export interface AStudioPointsClient {
   /**
    * Read the balance.
    *
-   * `fresh` bypasses the TTL cache — the badge's ↻ uses it so a manual click
+   * `fresh` bypasses the TTL cache — the section's ↻ uses it so a manual click
    * always reaches upstream.
    */
   read(options?: { fresh?: boolean }): Promise<AStudioPointsResult>
@@ -68,8 +68,8 @@ const DEFAULT_TIMEOUT_MS = 10_000
  * Read the `ssoSessionId` from an AStudio session file.
  *
  * Returns undefined for a missing file, malformed JSON, an absent field, or a
- * blank value — all of which mean "not signed in", a normal state the badge
- * hides rather than an error it reports.
+ * blank value — all of which mean "not signed in", a normal state the points
+ * section names rather than an error it reports.
  */
 export function readSsoSessionId(sessionPath: string): string | undefined {
   if (!existsSync(sessionPath)) return undefined
@@ -180,7 +180,7 @@ async function requestBalance(
  *
  * The session file is re-read on every upstream call rather than cached: when
  * AStudio is signed in again it rewrites that file with a new `ssoSessionId`, and
- * a cached credential would keep the badge pinned to an expired session.
+ * a cached credential would keep the points section pinned to an expired session.
  */
 export function createAStudioPointsClient(options: AStudioPointsClientOptions): AStudioPointsClient {
   const fetchImpl = options.fetchImpl ?? fetch
@@ -202,7 +202,7 @@ export function createAStudioPointsClient(options: AStudioPointsClientOptions): 
 
       const result = await requestBalance(sessionId, { fetchImpl, timeoutMs })
       // Only a readable answer is worth serving from cache. A failure must not
-      // sticky-fail the badge: the next read asks again.
+      // sticky-fail the points section: the next read asks again.
       if (result.status === 'ok') {
         cached = result
         cachedAtMs = now()

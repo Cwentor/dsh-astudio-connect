@@ -1,5 +1,5 @@
 /**
- * Same-origin points route for the composer badge: the account's two credit
+ * Same-origin points route for the settings section: the account's two credit
  * pools, fetched by the browser half on mount and on an explicit ↻. Loopback
  * Host/Origin gated exactly like the status route, GET only, and it never
  * carries the session credential it reads those pools with.
@@ -41,9 +41,9 @@ function browserRequestAllowed(req: IncomingMessage): boolean {
 /**
  * Whether this read must reach upstream instead of the TTL cache.
  *
- * The badge's ↻ is the only writer of this flag; a mount read leaves it off so
- * opening several sessions in a row does not bill the account service once per
- * composer.
+ * The section's ↻ is the only writer of this flag; a mount read by the settings
+ * panel leaves it off, so a page that merely renders the number twice does not
+ * bill the account service twice.
  */
 function wantsFreshRead(url: string | undefined): boolean {
   if (url === undefined) return false

@@ -55,6 +55,17 @@ export const en = {
   refreshPoints: 'Refresh balance',
   pointsUnavailable: 'Unavailable',
   pointsExpired: 'Sign-in expired',
+  claimPoints: 'Claim',
+  claimPointsHint: 'Claim the daily login reward',
+  claiming: 'Claiming…',
+  claimed: '+{points}',
+  claimedUnknown: 'Claimed',
+  claimNone: 'Already claimed today',
+  pointsNav: 'AStudio points',
+  pointsDailyHint: 'One daily login reward per day — the same one the AStudio app books.',
+  pointsSignedOut: 'AStudio is not signed in; the balances appear here once it is.',
+  pointsExpiredHint: 'The AStudio sign-in expired. Sign in again in the app, then refresh.',
+  pointsRetryHint: 'The account service returned no readable balance. Refresh to try again.',
 } as const
 
 /** Copy keys of the `settings.astudio` namespace. */
@@ -107,4 +118,15 @@ export const zh: Record<AStudioSettingsKey, string> = {
   refreshPoints: '刷新积分余额',
   pointsUnavailable: '暂不可用',
   pointsExpired: '登录已失效',
+  claimPoints: '领取',
+  claimPointsHint: '领取每日登录积分',
+  claiming: '领取中…',
+  claimed: '+{points}',
+  claimedUnknown: '已领取',
+  claimNone: '今日已领过',
+  pointsNav: 'AStudio 积分',
+  pointsDailyHint: '每日登录奖励每天一份，与 AStudio 客户端领的是同一份。',
+  pointsSignedOut: 'AStudio 未登录，登录后这里会显示账户积分。',
+  pointsExpiredHint: 'AStudio 登录已失效，在客户端重新登录后点刷新。',
+  pointsRetryHint: '账户接口没有返回可读的余额，可点刷新重试。',
 }

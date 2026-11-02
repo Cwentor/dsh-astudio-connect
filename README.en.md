@@ -16,7 +16,7 @@ An adaptation of the design in [dsh-workbuddy-connect](https://github.com/corrin
 - [Model Catalog](#model-catalog)
 - [Reasoning Effort and Probing](#reasoning-effort-and-probing)
 - [Model Visibility](#model-visibility)
-- [Points Balance Badge](#points-balance-badge)
+- [Points and the daily claim](#points-and-the-daily-claim)
 - [Billing and Points](#billing-and-points)
 - [Settings Card](#settings-card)
 - [DSH Version Support](#dsh-version-support)
@@ -75,7 +75,7 @@ Both must hold for the install to count as successful. If the group does not app
 - **Model catalog**: taken entirely from AStudio's own model-manager endpoint, carrying real context windows and max output; the plugin ships no roster of its own and reports "No models available" when it cannot fetch one.
 - **Reasoning-effort probing**: for models that declare no levels, sends a minimal sentinel-bearing request under your explicit consent, first confirming the upstream really validates `reasoning_effort`, then which levels it accepts.
 - **Model visibility**: pick which models appear in the picker from the settings card; a model you switch off leaves the picker immediately, and a session using it must select another before it can send.
-- **Balance at a glance**: with an AStudio model selected, the composer shows the account's general and Spark points balances beside the model picker, with a ↻ manual refresh and no automatic polling.
+- **Points and the daily claim**: a new **AStudio points** section in Settings lists the account's general and Spark balances with Refresh and Claim, so neither needs the AStudio client — nor an AStudio model selected.
 - **Settings card**: the AStudio Connect card under the sidebar Plugins panel, split into Account / Models / Probe sections, with manual catalog refresh and per-model probing.
 - **Command-line diagnostics**: `status`, `doctor` and `logout` — never emit credential material.
 - **Update check**: compares against npm's public dist-tags to decide whether a newer release exists, and enriches with GitHub release notes.
@@ -134,12 +134,16 @@ In the Context section of the settings card you can check which models appear in
 
 AStudio's token carries no stable uid, so this plugin has a single local identity, `astudio-local` — catalog snapshots, visibility preferences and probe records all hang off it, with no multi-account isolation.
 
-## Points Balance Badge
+## Points and the daily claim
 
-With an AStudio model selected, the composer's tool row (beside the model picker) shows the account's two points balances, with a ↻ manual refresh on the right:
+The last row of DSH's Settings navigation is **AStudio points**; opening it shows both balances and both actions:
 
 ```
-General 1393 · Spark 24621
+General points                       1393
+────────────────────────────────────────
+Spark points                        24621
+────────────────────────────────────────
+One daily login reward per day…  [Claim] [Refresh]
 ```
 
 The two balances are shown separately and are **never added together**, because they pay for different things:
@@ -153,24 +157,44 @@ The data comes from the account endpoint the AStudio desktop app itself uses (`h
 
 Behaviour guarantees:
 
-- **Read timing**: once when the badge appears, and again when you click ↻. **No timed polling** — every read hits the upstream.
-- **Visibility**: appears only when an AStudio model is selected in the current session; no request is issued under a provider-independent model.
-- **Never shows a fabricated number on failure**: if the balance cannot be read it degrades instead of rendering "unreadable" as `0`.
-- **30 second cache**: successful reads are cached for 30 seconds; ↻ sends `?refresh=1` to bypass the cache. Failures are not cached — the next read asks the upstream again.
+- **Read timing**: once when the section opens, and again when you press **Refresh**. **No timed polling** — every read hits the upstream.
+- **Independent of the session**: this page does not look at the selected model, so the balance is readable with no AStudio model selected — even in a session running someone else's model. (The same numbers used to live in the composer badge, which only appeared while that session had an AStudio model selected.)
+- **Fresh on open**: the mount read sends `?refresh=1`, bypassing the host's 30-second cache. Opening Settings is an explicit "how much do I have right now"; answering it with a 30-second-old number would be pointless.
+- **Never shows a fabricated number on failure**: an unreadable balance shows `—` with the reason, never `0`.
+- **Failures are not cached**, so the next read asks the upstream again.
 
 | Situation | Display |
 |---|---|
-| Network failure / upstream error | "Unavailable", ↻ retries |
-| Sign-in expired (upstream `code: 80000`, or 401/403) | "Sign-in expired" — sign in to AStudio again |
+| Network failure / upstream error | Numbers show `—` with "the account service returned no readable balance"; **Refresh** retries |
+| Sign-in expired (upstream `code: 80000`, or 401/403) | "The AStudio sign-in expired" — sign in to AStudio again |
 | Account has no Spark pool | Only general points are shown; no `0` |
 | The balance really is 0 | Shows `0` normally (0 is a real balance, not "unknown") |
-| Never signed in to AStudio | The badge does not appear at all |
+| Never signed in to AStudio | "AStudio is not signed in"; **Claim** is disabled (there is no session to book against) |
 
-> **Known limitation**: the account endpoint only provides aggregate balances, with no per-transaction detail — the AStudio desktop app itself is the same way (it directs users to the web to view details). So the badge can reflect *balance changes* but cannot say *exactly how much this conversation consumed*.
+> **Known limitation**: the account endpoint only provides aggregate balances, with no per-transaction detail — the AStudio desktop app itself is the same way (it directs users to the web to view details). So this page can reflect *balance changes* but cannot say *exactly how much this conversation consumed*.
 
 > **This number will not move while you chat through the plugin.** An unchanged balance does not mean nothing was spent — it means the call never entered AStudio's ledger at all. See [Billing and Points](#billing-and-points).
 
-If the badge shows "Unavailable" and clicking ↻ does nothing, first confirm the plugin artifacts match the running DSH version: DSH loads plugins at startup, so after rebuilding you must **fully quit and restart DSH** (refreshing the page is not enough).
+### Daily login reward
+
+The same card ends with a **Claim** button, which books AStudio's daily login reward (100 on trial, 200 on basic, 400 on Pro/Enjoy) **without opening AStudio**.
+
+It is not really a check-in. AStudio delivers the reward as a popup: `client-popups/pending` answers one `DAILY_REWARD_DIALOG` carrying `popupId`, `instanceKey` and the amount, and `client-popups/complete` books it. The desktop client fires that completion **itself** the moment the dialog arrives — the button in its UI is decoration — so "today's points landed" really means "AStudio was opened today". This button just makes the days it was not opened count too.
+
+One press is two requests: read the pending list, then report completion. The balance the answer carries is then shown directly, so the press does not trigger a second read. Upstream is idempotent (a repeated completion answers `11003002`, read as "already claimed"), so extra presses cannot mint credit and a mistake cannot drain the account.
+
+| Outcome | Display |
+|---|---|
+| Claimed | Balance updates in place, `+100` appears in green beside the button and fades after 6 seconds |
+| Already claimed today / nothing pending yet | "Already claimed today"; the balance does not move |
+| Sign-in expired (`code: 80000`, or 401/403) | Numbers cleared, "Sign-in expired" |
+| Upstream error / no `clientType` for this platform | "Unavailable" |
+
+Two identity headers are mandatory (without either, the gateway answers `11001001`): `clientType` (`21` on Windows, `22` on macOS) and `studioVersion`. The latter is only shape-checked, which is why the plugin sends a constant instead of reading the installed app's version — and why this works with AStudio uninstalled.
+
+> This is the plugin's **only** route that changes account state (`POST /astudio/claim`). It writes no local file, and it never touches other popup kinds in the pending list (announcements, feature tours): completing a popup it does not understand would mean deciding something on the user's behalf without knowing what.
+
+If this page reports "Unavailable" and **Refresh** does nothing, first confirm the plugin artifacts match the running DSH version: DSH loads plugins at startup, so after rebuilding you must **fully quit and restart DSH** (refreshing the page is not enough). If the nav row is missing entirely, the installed plugin predates this section — it shipped in the same change that replaced the composer badge with it.
 
 ## Billing and Points
 
@@ -192,7 +216,7 @@ Three conditions must hold at once to be charged: the request belongs to an acod
 - **Upstream can move metering into the gateway at any time**, keying it on uid or token. When that happens this path closes immediately, with no code change on our side.
 - **Do not try to "report back" on the plugin's behalf**: the `session_id` / `thread_id` / `call_ids` / `capability_usages` in `ClientTurnUsageReport` can only be produced by the acode runtime, and the server keeps `turn_billing_usage_reviews` as a missing-usage audit. A fabricated report only lands in the audit table; it does not make the books right.
 
-The badge reads AStudio's own ledger, so of course it stays still while you chat through the plugin — **an unchanged balance does not mean nothing was spent, only that the spend missed that ledger**. Read the [Disclaimer](#disclaimer) before using this.
+The points page reads AStudio's own ledger, so of course it stays still while you chat through the plugin — **an unchanged balance does not mean nothing was spent, only that the spend missed that ledger**. Read the [Disclaimer](#disclaimer) before using this.
 
 ## Settings Card
 
@@ -210,11 +234,12 @@ The card reads the status document once on mount and then every 60 seconds; all 
 |---|---|---|---|
 | `/astudio/status` | `GET` | Status document | loopback Host + Origin |
 | `/astudio/points` | `GET` | Points balance (`?refresh=1` bypasses the cache) | loopback Host + Origin |
+| `/astudio/claim` | `POST` | Book the daily login reward | loopback Host + Origin + in-process control key |
 | `/astudio/update` | `GET` | Version and update info | loopback Host + Origin |
 | `/astudio/probe/{modelId}` | `POST` | Reasoning-effort probing | loopback Host + Origin + in-process control key |
 | `/astudio/visibility/{modelId}` | `POST` | Model visibility (one per changed model, sent by Save) | loopback Host + Origin + in-process control key |
 
-Both write routes require the same in-process control key (handed out with the status document, rotated per process, never persisted): the status route's loopback check stops a DNS-rebinding **page**, and that is not the same as authorising a **state-changing** action.
+Three write routes (probing, visibility, claim) require the same in-process control key (handed out with the status document, rotated per process, never persisted): the status route's loopback check stops a DNS-rebinding **page**, and that is not the same as authorising a **state-changing** action. The claim route additionally checks Origin — a cross-site `fetch` reaches `127.0.0.1` just as well, and "another page claimed points for me" is exactly what that header rules out.
 
 ## DSH Version Support
 
@@ -223,7 +248,7 @@ Both write routes require the same in-process control key (handed out with the s
 | `0.1.1` | `^0.2.1-rc.2` (from `0.2.1-rc.2`, below `0.3.0`) |
 | `0.1.0` | `0.2.0-rc.2` (exact) |
 
-The plugin declares a kernel range in `peerDependencies`; the host's `evaluatePluginCompatibility` checks it with semver and refuses to load the plugin when the range is unmet. `0.1.0` pinned an exact version, so every kernel rc needed a matching plugin release; from `0.1.1` the requirement is `^0.2.1-rc.2`, which covers every prerelease and the final release of the `0.2.1` line (`rc.3`, `rc.4`, `rc.5` all load as-is), and only a move to `0.3.x` requires a new plugin version. `0.1.0` shipped against `0.2.0-rc.2`, which was the real-machine environment; on the `0.1.1` line provider registration, the settings card and the points badge are covered by local unit and integration tests, and the exact desktop build number still needs re-confirming on the new kernel.
+The plugin declares a kernel range in `peerDependencies`; the host's `evaluatePluginCompatibility` checks it with semver and refuses to load the plugin when the range is unmet. `0.1.0` pinned an exact version, so every kernel rc needed a matching plugin release; from `0.1.1` the requirement is `^0.2.1-rc.2`, which covers every prerelease and the final release of the `0.2.1` line (`rc.3`, `rc.4`, `rc.5` all load as-is), and only a move to `0.3.x` requires a new plugin version. `0.1.0` shipped against `0.2.0-rc.2`, which was the real-machine environment; on the `0.1.1` line provider registration, the settings card and the points section are covered by local unit and integration tests, and the exact desktop build number still needs re-confirming on the new kernel.
 
 ## When the upstream refuses a request
 
@@ -248,8 +273,9 @@ A refused body is also written to `%TEMP%\dsh-astudio-connect\failed-requests\` 
 - [ ] **A single local identity**: AStudio's token carries no stable uid, so catalog snapshots, visibility preferences and probe records all hang off `astudio-local`, with no multi-account isolation.
 - [ ] **Plugin calls are not billed to AStudio points**: points are settled by the desktop app per turn, and the plugin creates no turn, so nothing is deducted. For better or worse this is an unmetered path — see [Billing and Points](#billing-and-points). The plugin deliberately offers no way to "report back".
 - [ ] **The balance gate does not cover the plugin**: AStudio itself returns `402` at zero balance, but that check lives inside its own local gateway, which the plugin bypasses (inferred, not tested).
-- [ ] **No per-transaction billing detail**: the account endpoint only provides aggregate balances, so the badge can only reflect balance changes; plugin calls produce no billing records at all, let alone detail.
+- [ ] **No per-transaction billing detail**: the account endpoint only provides aggregate balances, so Settings can only reflect balance changes; plugin calls produce no billing records at all, let alone detail.
 - [ ] **No long-term compatibility guarantee for upstream private endpoints**: the model catalog, account endpoint and reasoning-level information are the AStudio client's own interfaces rather than an official open API, and upstream changes may break the plugin. In that case it degrades to "last successful catalog", and says so plainly when there is no snapshot either, but long-term compatibility cannot be promised.
+- [ ] **The claim button depends on two hard-coded client identity headers**: `clientType` (platform) and `studioVersion` (the constant `3.5.5`). If upstream ever demands a build number, a signature or a device fingerprint, this path dies immediately and the button will only report "Unavailable".
 - [ ] **The CLI's `status` now issues one live fetch**: it waits for a real request so it can report the actual catalog source and model count; offline or signed out, it reports `empty` with the matching failure.
 - [ ] **No account-switch following**: unlike WorkBuddy's two variants, AStudio is a single product, so the plugin does not replicate variant-level capabilities.
 
@@ -261,6 +287,7 @@ A refused body is also written to `%TEMP%\dsh-astudio-connect\failed-requests\` 
 - The shared secret is a random 32-byte value generated per process, compared in constant time with `timingSafeEqual`; the real AStudio token is resolved by the credential layer alone and never travels in a request header.
 - Tokens are never echoed in any UI or log; the CLI strips JWT-shaped strings from error text.
 - The points route and the status route apply the same loopback Host / Origin double check; responses contain only numbers and state, and account credentials stay inside the host process.
+- The claim route is the plugin's only account-side write: it reports that today's daily-reward popup is complete, writes no local file, and touches no other popup kind; its answer carries only a state, the amount and the new balance.
 - Every upstream response is treated as untrusted input: streaming reads carry size caps, and route responses are re-validated in the browser before rendering.
 
 ## Development

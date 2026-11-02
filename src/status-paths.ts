@@ -66,13 +66,23 @@ export const ASTRO_LEGACY_PROBE_KEY_HEADER = 'x-astudio-probe-key'
 export const ASTRO_UPDATE_PATH = '/astudio/update'
 
 /**
- * Same-origin route backing the composer's points badge.
+ * Same-origin route backing the points section in Settings.
  *
  * Read-only like the status route, so the same loopback Host/Origin gate
  * applies. It answers the two credit pools the AStudio account holds and a
  * named failure state — never the session credential it reads them with.
  */
 export const ASTRO_POINTS_PATH = '/astudio/points'
+
+/**
+ * Same-origin route backing the points section's claim button.
+ *
+ * Unlike the two routes above this one **writes**: it books the account
+ * service's daily login reward. It therefore carries the same three guards as
+ * the other write routes — loopback Host, loopback Origin, and the in-process
+ * control key — and answers a named state rather than an error body.
+ */
+export const ASTRO_CLAIM_PATH = '/astudio/claim'
 
 /** Sign-in section of the status document. */
 export interface AStudioWebAuth {
@@ -126,7 +136,7 @@ export interface AStudioWebStatus {
 }
 
 /**
- * One credit pool, as the badge renders it.
+ * One credit pool, as the section renders it.
  *
  * Kept here rather than in `points.ts` because that module reads the session
  * file and therefore imports `node:fs`; the browser half may only import this
@@ -147,4 +157,25 @@ export type AStudioWebPoints =
   /** The session exists but the account service rejected it. */
   | { status: 'expired' }
   /** The service could not be read, or answered something unrecognised. */
+  | { status: 'unavailable' }
+
+/**
+ * What the claim route serves.
+ *
+ * `claimed` carries the balance read immediately after the reward landed, so
+ * the section can show the new number without a second round trip. That balance
+ * is a full {@link AStudioWebPoints} document: the claim succeeded even if the
+ * follow-up read did not, and a failed read must not turn a booked reward into
+ * an error.
+ *
+ * `points` is what the popup announced. Deliberately optional: the amount is a
+ * string in the popup payload, and an unparsable one is reported as "claimed,
+ * amount unknown" rather than as `+0`.
+ */
+export type AStudioWebClaim =
+  | { status: 'claimed', points?: number, balance: AStudioWebPoints }
+  /** Signed in, but the account service has no reward pending for today. */
+  | { status: 'none' }
+  | { status: 'signed-out' }
+  | { status: 'expired' }
   | { status: 'unavailable' }

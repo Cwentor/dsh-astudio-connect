@@ -39,6 +39,8 @@ import { registerAStudioVisibilityRoute } from './visibility-route.ts'
 import { createControlKey } from './control-key.ts'
 import { createAStudioPointsClient } from './points.ts'
 import { registerAStudioPointsRoute } from './points-route.ts'
+import { createAStudioDailyRewardClient } from './daily-reward.ts'
+import { registerAStudioClaimRoute } from './claim-route.ts'
 import { piAiVersionWarning } from './pi-ai-guard.ts'
 
 export { ASTRO_PROVIDER, ASTRO_STREAM_IDLE_TIMEOUT_MS, createAStudioAdapter } from './adapter.ts'
@@ -48,6 +50,7 @@ export { createAStudioUpstream, DEFAULT_UPSTREAM_URL } from './upstream.ts'
 export { createAStudioCatalog } from './catalog.ts'
 export type { AStudioCatalog, AStudioCatalogFailure, AStudioCatalogSource, AStudioModelInfo } from './catalog.ts'
 export { createAStudioPointsClient, parseAStudioPointsBalance, readSsoSessionId } from './points.ts'
+export { createAStudioDailyRewardClient } from './daily-reward.ts'
 
 /**
  * Host services this plugin reads.
@@ -265,12 +268,21 @@ function registerAStudioWebRoutes(
   // Register the update route on the host web server.
   registerAStudioUpdateRoute(ctx, { currentVersion: ASTRO_VERSION })
 
-  // Register the points route backing the composer badge. The client re-reads
+  // Register the points route backing the settings section. The client re-reads
   // the session file on every upstream call, so an AStudio re-login is picked up
-  // by the next ↻ rather than pinning the badge to an expired session.
-  registerAStudioPointsRoute(ctx, {
-    client: createAStudioPointsClient({ sessionPath: store.sessionPath() }),
-  })
+  // by the next ↻ rather than pinning the section to an expired session.
+  const pointsClient = createAStudioPointsClient({ sessionPath: store.sessionPath() })
+  registerAStudioPointsRoute(ctx, { client: pointsClient })
+
+  // Register the daily-reward claim route. It shares the balance client so the
+  // answer to a claim can carry the new numbers, and it is the only route here
+  // that changes account state — hence the control key.
+  registerAStudioClaimRoute(ctx, {
+    client: createAStudioDailyRewardClient({
+      sessionPath: store.sessionPath(),
+      points: pointsClient,
+    }),
+  }, controlKey)
 
   // Register the probe route on the host web server.
   const probeService = createAStudioProbeService({

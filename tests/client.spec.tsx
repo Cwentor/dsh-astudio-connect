@@ -95,9 +95,9 @@ describe('isAStudioWebStatus', () => {
 
 describe('apply', () => {
   /**
-   * A stand-in for the host client context: the locale face, the slot registry,
-   * and the model-directories service the composer badge resolves its session's
-   * selection through.
+   * A stand-in for the host client context: the locale face and the slot
+   * registry. `inject` is present because `ctx.inject` is part of the client
+   * root's surface even though no contribution asks it for a service today.
    */
   function clientContext(registered: string[]): unknown {
     const slots = {
@@ -119,11 +119,9 @@ describe('apply', () => {
         bind: (namespace: string): (key: string) => string => (key: string): string => `${namespace}:${key}`,
       },
       slots,
-      // `ctx.inject(['modelDirectories'], …)` runs the callback once the service
-      // is present; the fake provides it immediately.
       inject: (deps: string[], cb: (scope: unknown) => void): void => {
         for (const dep of deps) registered.push(`service:${dep}`)
-        cb({ slots, modelDirectories: { directoryFor: () => ({ store: {} }) } })
+        cb({ slots })
       },
     }
   }
@@ -135,11 +133,19 @@ describe('apply', () => {
     expect(registered).toContain('locale:settings.astudio')
     expect(registered).toContain('inject:plugins.bundle.config')
     expect(registered).toContain('register:plugins.bundle.config')
-    // The composer badge: beside the model selector, gated on the session's
-    // selected provider.
-    expect(registered).toContain('service:modelDirectories')
-    expect(registered).toContain('inject:conversation.input.right')
-    expect(registered).toContain('register:conversation.input.right')
+    // The Settings navigation row that replaced the composer badge.
+    expect(registered).toContain('inject:settings.section')
+    expect(registered).toContain('register:settings.section')
+  })
+
+  it('no longer contributes to the composer tool row', () => {
+    // The balance, the refresh and the claim moved into Settings; a leftover
+    // registration would put the same three controls on two surfaces.
+    const registered: string[] = []
+    apply(clientContext(registered) as never)
+
+    expect(registered).not.toContain('inject:conversation.input.right')
+    expect(registered).not.toContain('register:conversation.input.right')
   })
 
   it('no longer contributes to the DSH 0.1.5 settings tab seat', () => {
