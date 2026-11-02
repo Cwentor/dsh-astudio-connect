@@ -33,7 +33,7 @@ An adaptation of the design in [dsh-workbuddy-connect](https://github.com/corrin
 ### Prerequisites
 
 - Node.js `^22.19.0 || >=24.0.0` installed locally
-- The AStudio desktop app installed and signed in (the plugin reuses the app's sign-in state; account switches follow automatically)
+- A xfyun account: sign in with a WeChat QR code in DSH Settings — **AStudio is not required**. If the app is installed and signed in, the plugin reuses that sign-in too.
 - A DeepSeek Harness runtime — see [DSH Version Support](#dsh-version-support)
 
 ### Install the plugin
@@ -276,10 +276,13 @@ Five write routes (probing, visibility, claim, and the two sign-in routes) requi
 
 | Plugin version | DSH kernel range it supports |
 |---|---|
+| `0.2.0` | `^0.2.1-rc.2` (from `0.2.1-rc.2`, below `0.3.0`) |
 | `0.1.1` | `^0.2.1-rc.2` (from `0.2.1-rc.2`, below `0.3.0`) |
 | `0.1.0` | `0.2.0-rc.2` (exact) |
 
 The plugin declares a kernel range in `peerDependencies`; the host's `evaluatePluginCompatibility` checks it with semver and refuses to load the plugin when the range is unmet. `0.1.0` pinned an exact version, so every kernel rc needed a matching plugin release; from `0.1.1` the requirement is `^0.2.1-rc.2`, which covers every prerelease and the final release of the `0.2.1` line (`rc.3`, `rc.4`, `rc.5` all load as-is), and only a move to `0.3.x` requires a new plugin version. `0.1.0` shipped against `0.2.0-rc.2`, which was the real-machine environment; on the `0.1.1` line provider registration, the settings card and the points section are covered by local unit and integration tests, and the exact desktop build number still needs re-confirming on the new kernel.
+
+`0.2.0` carries the same kernel range as `0.1.1` and adds nothing but features: the points section in Settings (balance and the daily claim) and WeChat QR sign-in. One thing to know before upgrading — **from `0.2.0` the plugin writes a credential file to disk**. That is unavoidable for QR sign-in: without the app, somebody has to hold the session. It lives at `$DSH_HOME/.astudio-login.json`, mode `0600`, created only when you scan a code and deleted when you sign out. If you want the old behaviour — read the app's credentials and write nothing at all — stay on `0.1.1`.
 
 ## When the upstream refuses a request
 
