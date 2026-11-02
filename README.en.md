@@ -218,12 +218,12 @@ Both write routes require the same in-process control key (handed out with the s
 
 ## DSH Version Support
 
-| Plugin version | DSH kernel it needs |
+| Plugin version | DSH kernel range it supports |
 |---|---|
-| `0.1.1` | `0.2.1-rc.2` |
-| `0.1.0` | `0.2.0-rc.2` |
+| `0.1.1` | `^0.2.1-rc.2` (from `0.2.1-rc.2`, below `0.3.0`) |
+| `0.1.0` | `0.2.0-rc.2` (exact) |
 
-The host refuses to load the plugin when the kernel generation does not match. `0.1.0` shipped against `0.2.0-rc.2`, which was the real-machine environment; from `0.1.1` on the plugin targets `0.2.1-rc.2`, where provider registration, the settings card and the points badge are covered by local unit and integration tests, and the exact desktop build number still needs re-confirming on the new kernel.
+The plugin declares a kernel range in `peerDependencies`; the host's `evaluatePluginCompatibility` checks it with semver and refuses to load the plugin when the range is unmet. `0.1.0` pinned an exact version, so every kernel rc needed a matching plugin release; from `0.1.1` the requirement is `^0.2.1-rc.2`, which covers every prerelease and the final release of the `0.2.1` line (`rc.3`, `rc.4`, `rc.5` all load as-is), and only a move to `0.3.x` requires a new plugin version. `0.1.0` shipped against `0.2.0-rc.2`, which was the real-machine environment; on the `0.1.1` line provider registration, the settings card and the points badge are covered by local unit and integration tests, and the exact desktop build number still needs re-confirming on the new kernel.
 
 ## When the upstream refuses a request
 
