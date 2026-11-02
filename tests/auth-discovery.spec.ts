@@ -7,12 +7,8 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs'
 import { join, win32 } from 'node:path'
 import { tmpdir } from 'node:os'
-import {
-  createAStudioAuth,
-  readTokenFromConfig,
-  readModelBearerToken,
-  resolveDefaultConfigPath,
-} from '../src/auth.ts'
+import { readTokenFromConfig, readModelBearerToken, resolveDefaultConfigPath } from '../src/auth.ts'
+import { testAuth } from './support/auth.ts'
 
 let dir: string
 
@@ -108,7 +104,7 @@ describe('createAStudioAuth', () => {
     writeConfig(dir, 'chat-secret')
     const session = writeSession(dir, 'model-secret')
 
-    const auth = createAStudioAuth({ dataHome: dir })
+    const auth = testAuth({ dataHome: dir })
 
     expect(auth.resolve()).toBe('chat-secret')
     expect(auth.modelBearerToken()).toBe('model-secret')
@@ -118,7 +114,7 @@ describe('createAStudioAuth', () => {
 
   it('reports signed-out when no session file exists', async () => {
     writeConfig(dir, 'chat-secret')
-    const auth = createAStudioAuth({ dataHome: dir })
+    const auth = testAuth({ dataHome: dir })
     const status = await auth.status()
     expect(status.state).toBe('signed-in')
     expect(auth.modelBearerToken()).toBeUndefined()

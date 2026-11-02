@@ -2,12 +2,15 @@
 /**
  * AStudio Connect CLI: secret-free status, doctor, and logout.
  *
- * The CLI is boot-free: it never reads the token into a shell prompt or writes
- * the AStudio config.toml. `logout` clears only the plugin's in-memory cache.
+ * The CLI is boot-free: it never reads the token into a shell prompt and never
+ * writes the AStudio config.toml. `logout` deletes the plugin's own sign-in
+ * file, which is the only credential this plugin ever writes; the AStudio app's
+ * session is the app's to clear.
  *
- * Hints: `doctor` reports config path/existence, sign-in state, whether the
- * model-manager token is present, and repair hints (exit 0 only when signed in
- * and the config file exists); `status` also reports catalog source and model
+ * Hints: `doctor` reports config path/existence, which sign-in is in use,
+ * whether the model-manager token is present, and repair hints (exit 0 when
+ * signed in at all — a QR sign-in needs no config.toml, so a missing one is a
+ * hint rather than a failure); `status` also reports catalog source and model
  * count. Neither prints the token — only `tokenLength` and presence — and
  * JWT-shaped strings in error output are replaced with `[redacted token]`.
  * `status` always claims the "built-in" catalog source, because the live
@@ -31,6 +34,13 @@ const ASTRO_PROVIDER = 'astudio'
 export interface RunOptions {
   /** Override the AStudio config.toml path (used by tests). */
   configPath?: string
+  /**
+   * Override the plugin's own sign-in file (used by tests).
+   *
+   * Production always uses the DSH home; tests must not, or a real sign-in on
+   * the machine would answer for them.
+   */
+  loginSessionPath?: string
   /**
    * Override the catalog snapshot path (used by tests).
    *
@@ -76,6 +86,7 @@ function makeStore(options: RunOptions = {}) {
   return createAStudioAuth({
     ...(options.configPath !== undefined ? { configPath: options.configPath } : {}),
     ...(options.dataHome !== undefined ? { dataHome: options.dataHome } : {}),
+    ...(options.loginSessionPath !== undefined ? { loginSessionPath: options.loginSessionPath } : {}),
   })
 }
 
@@ -97,6 +108,8 @@ async function doctor(jsonOutput: boolean, options: RunOptions): Promise<number>
     package: 'dsh-astudio-connect',
     provider: ASTRO_PROVIDER,
     signIn: status.state,
+    /** `dsh` is a sign-in performed in the plugin, `client` one read from the app. */
+    signInSource: status.source,
     configFile: {
       path: status.configPath,
       present: configPresent,
@@ -107,8 +120,10 @@ async function doctor(jsonOutput: boolean, options: RunOptions): Promise<number>
       hasModelToken: status.hasModelToken === true,
     },
     hints: [
-      ...status.state === 'signed-out' ? ['Sign in once in the AStudio desktop app, then run status again.'] : [],
-      ...configPresent ? [] : [`No AStudio config.toml at ${status.configPath}.`],
+      ...status.state === 'signed-out'
+        ? ['No sign-in found. Sign in with WeChat from the AStudio points section in DSH Settings, or sign in once in the AStudio desktop app.']
+        : [],
+      ...configPresent || status.source === 'dsh' ? [] : [`No AStudio config.toml at ${status.configPath}.`],
       ...status.hints,
     ],
   }
@@ -118,13 +133,14 @@ async function doctor(jsonOutput: boolean, options: RunOptions): Promise<number>
     process.stdout.write([
       `AStudio Connect on ${process.version}`,
       `Config file: ${configPresent ? 'present' : 'missing'} — ${status.configPath}`,
-      `Sign-in state: ${report.signIn}`,
+      `Sign-in state: ${report.signIn} (source: ${report.signInSource})`,
       `Model catalog token: ${report.modelCatalog.hasModelToken ? 'present' : 'missing (no models will be listed)'}`,
       ...report.hints.map(hint => `Hint: ${hint}`),
       '',
     ].join('\n'))
   }
-  return status.state === 'signed-in' && configPresent ? 0 : 1
+  // A QR sign-in has no config.toml to find, so its absence is not a failure.
+  return status.state === 'signed-in' ? 0 : 1
 }
 
 async function status(jsonOutput: boolean, options: RunOptions): Promise<number> {
@@ -140,6 +156,7 @@ async function status(jsonOutput: boolean, options: RunOptions): Promise<number>
     package: 'dsh-astudio-connect',
     provider: ASTRO_PROVIDER,
     state: authStatus.state,
+    signInSource: authStatus.source,
     source: catalog.source(),
     modelCount: catalog.current().length,
     ...(failure !== undefined ? { failure } : {}),

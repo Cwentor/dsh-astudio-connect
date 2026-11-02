@@ -10,6 +10,7 @@ import {
   ASTRO_STUDIO_VERSION,
 } from '../src/daily-reward.ts'
 import type { AStudioPointsClient } from '../src/points.ts'
+import { readSsoSessionId } from '../src/points.ts'
 import type { AStudioWebPoints } from '../src/status-paths.ts'
 
 /**
@@ -126,7 +127,7 @@ describe('createAStudioDailyRewardClient', () => {
     })
 
     const result = await createAStudioDailyRewardClient({
-      sessionPath,
+      sessionId: () => readSsoSessionId(sessionPath),
       points: points.client,
       fetchImpl,
       clientType: '21',
@@ -157,7 +158,7 @@ describe('createAStudioDailyRewardClient', () => {
     })
 
     const result = await createAStudioDailyRewardClient({
-      sessionPath,
+      sessionId: () => readSsoSessionId(sessionPath),
       points: points.client,
       fetchImpl,
       clientType: '21',
@@ -181,7 +182,7 @@ describe('createAStudioDailyRewardClient', () => {
     })
 
     const result = await createAStudioDailyRewardClient({
-      sessionPath,
+      sessionId: () => readSsoSessionId(sessionPath),
       points: points.client,
       fetchImpl,
       clientType: '21',
@@ -200,7 +201,7 @@ describe('createAStudioDailyRewardClient', () => {
     })
 
     const result = await createAStudioDailyRewardClient({
-      sessionPath,
+      sessionId: () => readSsoSessionId(sessionPath),
       points: points.client,
       fetchImpl,
       clientType: '21',
@@ -220,7 +221,7 @@ describe('createAStudioDailyRewardClient', () => {
     })
 
     const result = await createAStudioDailyRewardClient({
-      sessionPath,
+      sessionId: () => readSsoSessionId(sessionPath),
       points: points.client,
       fetchImpl,
       clientType: '21',
@@ -237,7 +238,7 @@ describe('createAStudioDailyRewardClient', () => {
     const { fetchImpl, calls } = recordingFetch({})
 
     const result = await createAStudioDailyRewardClient({
-      sessionPath,
+      sessionId: () => readSsoSessionId(sessionPath),
       points: points.client,
       fetchImpl,
       clientType: '21',
@@ -253,7 +254,7 @@ describe('createAStudioDailyRewardClient', () => {
     const { fetchImpl, calls } = recordingFetch({})
 
     const result = await createAStudioDailyRewardClient({
-      sessionPath,
+      sessionId: () => readSsoSessionId(sessionPath),
       points: points.client,
       fetchImpl,
       clientType: undefined,
@@ -270,7 +271,7 @@ describe('createAStudioDailyRewardClient', () => {
     const points = stubPoints()
 
     const byCode = await createAStudioDailyRewardClient({
-      sessionPath,
+      sessionId: () => readSsoSessionId(sessionPath),
       points: points.client,
       fetchImpl: recordingFetch({ pending: () => new Response(JSON.stringify(envelope(null, 80000))) }).fetchImpl,
       clientType: '21',
@@ -278,7 +279,7 @@ describe('createAStudioDailyRewardClient', () => {
     expect(byCode).toEqual({ status: 'expired' })
 
     const byStatus = await createAStudioDailyRewardClient({
-      sessionPath,
+      sessionId: () => readSsoSessionId(sessionPath),
       points: points.client,
       fetchImpl: recordingFetch({ pending: () => new Response('', { status: 401 }) }).fetchImpl,
       clientType: '21',
@@ -292,7 +293,7 @@ describe('createAStudioDailyRewardClient', () => {
     const fetchImpl = (async () => { throw new TypeError('fetch failed') }) as unknown as typeof fetch
 
     const result = await createAStudioDailyRewardClient({
-      sessionPath,
+      sessionId: () => readSsoSessionId(sessionPath),
       points: points.client,
       fetchImpl,
       clientType: '21',
@@ -310,7 +311,7 @@ describe('createAStudioDailyRewardClient', () => {
     })
 
     const result = await createAStudioDailyRewardClient({
-      sessionPath,
+      sessionId: () => readSsoSessionId(sessionPath),
       points: points.client,
       fetchImpl,
       clientType: '21',

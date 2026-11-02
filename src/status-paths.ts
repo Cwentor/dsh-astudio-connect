@@ -84,11 +84,87 @@ export const ASTRO_POINTS_PATH = '/astudio/points'
  */
 export const ASTRO_CLAIM_PATH = '/astudio/claim'
 
+/**
+ * Same-origin route that starts a WeChat QR sign-in.
+ *
+ * A write like the claim route, and guarded the same way: this one asks the
+ * account service to mint a login ticket, which is not something any page that
+ * reaches `127.0.0.1` should be able to do. The answer carries the QR image as
+ * a data URL, so the browser loads nothing from a third-party host.
+ */
+export const ASTRO_LOGIN_QR_PATH = '/astudio/login/qr'
+
+/**
+ * Same-origin route that polls a started QR sign-in.
+ *
+ * Separate from {@link ASTRO_LOGIN_QR_PATH} because it is what actually writes a
+ * credential — the poll that sees a scan exchanges the ticket for a model key
+ * and persists it. Same three guards.
+ */
+export const ASTRO_LOGIN_QR_POLL_PATH = '/astudio/login/qr/poll'
+
+/** Same-origin route that forgets the plugin's own sign-in. */
+export const ASTRO_LOGOUT_PATH = '/astudio/login/logout'
+
 /** Sign-in section of the status document. */
 export interface AStudioWebAuth {
   state: 'signed-in' | 'signed-out'
   tokenLength?: number
 }
+
+/**
+ * Where the credential in use came from.
+ *
+ * `dsh` is a sign-in performed here (the QR flow) and stored by the plugin;
+ * `client` is one read out of the AStudio app's own files. The distinction is
+ * the whole point of the QR flow — it is what lets the plugin work with AStudio
+ * uninstalled — so the UI names it rather than hiding it behind "signed in".
+ */
+export interface AStudioWebLogin {
+  source: 'dsh' | 'client' | 'none'
+  /** Account id, present when the source names one. */
+  accountId?: string
+  nickname?: string
+  avatar?: string
+  /** ISO timestamp of the sign-in that produced this credential. */
+  loggedInAt?: string
+}
+
+/** What a started QR sign-in answers. */
+export type AStudioWebQrStart =
+  | {
+    status: 'ok'
+    /** Ticket handle the poll route takes back. */
+    fd: string
+    /** `data:image/...` QR code, safe to put straight in an `img src`. */
+    image: string
+    /** Epoch milliseconds after which the ticket is worthless. */
+    expiresAtMs: number
+  }
+  | { status: 'unavailable' }
+
+/**
+ * What one poll answers.
+ *
+ * `unbound` is not an error: the scan worked, that WeChat account simply has no
+ * AStudio account attached to it. `select-account` appears when it has several,
+ * and the press that picks one polls again with its id.
+ */
+export type AStudioWebQrPoll =
+  /** No scan yet. */
+  | { status: 'pending' }
+  /** The ticket aged out (or was never valid here). Start a new one. */
+  | { status: 'expired' }
+  | { status: 'unbound' }
+  | {
+    status: 'select-account'
+    accounts: Array<{ accountId: string, username?: string }>
+    avatar?: string
+  }
+  | { status: 'authenticated', login: AStudioWebLogin }
+  /** Scanned and exchanged, but the account has no model credential to offer. */
+  | { status: 'no-credential' }
+  | { status: 'unavailable' }
 
 /**
  * Catalog provenance section of the status document.
@@ -126,6 +202,13 @@ export interface AStudioWebStatus {
   catalog: AStudioWebCatalog
   visibility: AStudioWebVisibility
   probe: AStudioWebProbe
+  /**
+   * Which sign-in the credential came from.
+   *
+   * Optional so an older host without the QR flow still satisfies the type —
+   * the section reads it as `none` when absent and offers the QR sign-in.
+   */
+  login?: AStudioWebLogin
   /**
    * In-process key authorizing every control write from the card (probe and
    * model visibility). Handed to the browser half with the status document

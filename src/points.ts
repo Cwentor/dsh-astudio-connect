@@ -4,9 +4,10 @@
  * AStudio's own settings surface reads the account's two credit pools from its
  * loopback server (`/api/astron-auth/points-balance`), which forwards to
  * `{studioApiBaseUrl}points/balance` with the desktop session cookie. This
- * module reaches that upstream directly, using the `ssoSessionId` the desktop
- * app already writes into `astron-session.json` — the same file this plugin
- * already reads for `modelBearerToken`, so no new location discovery is needed.
+ * module reaches that upstream directly, with the `ssoSessionId` cookie the
+ * caller supplies — it is either the one the AStudio app wrote into
+ * `astron-session.json` or the one a QR sign-in stored here, and this module
+ * does not care which.
  *
  * The upstream document distinguishes two pools that must never be added
  * together, because they pay for different things:
@@ -40,8 +41,14 @@ export type AStudioPointsResult = AStudioWebPoints
 
 /** Options for {@link createAStudioPointsClient}. */
 export interface AStudioPointsClientOptions {
-  /** The `astron-session.json` to read. */
-  sessionPath: string
+  /**
+   * The account cookie to call with, or undefined when nobody is signed in.
+   *
+   * A provider rather than a file path: the cookie can come from the AStudio
+   * app's `astron-session.json` or from a sign-in this plugin made itself, and
+   * this module has no business knowing which.
+   */
+  sessionId: () => string | undefined
   /** Injected for tests. */
   fetchImpl?: typeof fetch
   /** Injected clock, for TTL tests. */
@@ -66,6 +73,10 @@ const DEFAULT_TIMEOUT_MS = 10_000
 
 /**
  * Read the `ssoSessionId` from an AStudio session file.
+ *
+ * The app's way of finding the cookie. Kept exported because the auth store and
+ * the tests still read a file directly; the points client itself takes whichever
+ * provider it is handed.
  *
  * Returns undefined for a missing file, malformed JSON, an absent field, or a
  * blank value — all of which mean "not signed in", a normal state the points
@@ -197,7 +208,7 @@ export function createAStudioPointsClient(options: AStudioPointsClientOptions): 
         return cached
       }
 
-      const sessionId = readSsoSessionId(options.sessionPath)
+      const sessionId = options.sessionId()
       if (sessionId === undefined) return { status: 'signed-out' }
 
       const result = await requestBalance(sessionId, { fetchImpl, timeoutMs })

@@ -10,7 +10,7 @@ import type { AddressInfo } from 'node:net'
 import { writeFileSync, unlinkSync, existsSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
-import { createAStudioAuth } from '../src/auth.ts'
+import { testAuth } from './support/auth.ts'
 import { createAStudioUpstream } from '../src/upstream.ts'
 import { createAStudioCatalog } from '../src/catalog.ts'
 import { createAStudioShim } from '../src/shim.ts'
@@ -96,7 +96,7 @@ afterAll(async () => {
 })
 
 beforeEach(async () => {
-  const store = createAStudioAuth({ configPath: testFile })
+  const store = testAuth({ configPath: testFile })
   const upstream = createAStudioUpstream({ baseUrl: `http://127.0.0.1:${mockPort}/v1` })
   const catalog = createAStudioCatalog({
     upstream,
@@ -159,7 +159,7 @@ describe('integration', () => {
   })
 
   it('adapter lists models from catalog', async () => {
-    const store = createAStudioAuth({ configPath: testFile })
+    const store = testAuth({ configPath: testFile })
     const upstream = createAStudioUpstream({ baseUrl: `http://127.0.0.1:${mockPort}/v1` })
     // The mock speaks chat completions only, so the roster comes from a saved
     // upstream snapshot instead of a fetch. That is the same path a restart

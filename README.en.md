@@ -151,13 +151,13 @@ The two balances are shown separately and are **never added together**, because 
 - **General points** (`totalBalance`): every model, plus plugins and Skill calls (AStudio's own plugins and Skills — **not this plugin**).
 - **Spark points** (`sparkTotalBalance`): Spark-branded models only.
 
-The data comes from the account endpoint the AStudio desktop app itself uses (`https://agent.xfyun.cn/xingchen-studio/points/balance`). AStudio's settings page requests its own loopback service, which forwards to the account API carrying the desktop session cookie; this plugin reaches the same upstream directly using the `ssoSessionId` already present in `astron-session.json`, so it **adds no location discovery and does not require AStudio to be running**.
+The data comes from the account endpoint the AStudio desktop app itself uses (`https://agent.xfyun.cn/xingchen-studio/points/balance`). AStudio's settings page requests its own loopback service, which forwards to the account API carrying the desktop session cookie; this plugin reaches the same upstream directly with that same cookie, so it **does not require AStudio to be running**. The cookie has two possible sources — a sign-in performed here, or the one AStudio wrote into `astron-session.json` — and ours wins; see [WeChat QR sign-in](#wechat-qr-sign-in).
 
 > `ssoSessionId`, the `modelBearerToken` used by the catalog, and the chat `experimental_bearer_token` all live in the same file — but they are three credentials for three different purposes.
 
 Behaviour guarantees:
 
-- **Read timing**: once when the section opens, and again when you press **Refresh**. **No timed polling** — every read hits the upstream.
+- **Read timing**: once when the section opens, and again when you press **Refresh**. **No timed polling of the balance** — every read hits the upstream. (The one thing asked about on a timer is the sign-in QR code; see [WeChat QR sign-in](#wechat-qr-sign-in).)
 - **Independent of the session**: this page does not look at the selected model, so the balance is readable with no AStudio model selected — even in a session running someone else's model. (The same numbers used to live in the composer badge, which only appeared while that session had an AStudio model selected.)
 - **Fresh on open**: the mount read sends `?refresh=1`, bypassing the host's 30-second cache. Opening Settings is an explicit "how much do I have right now"; answering it with a 30-second-old number would be pointless.
 - **Never shows a fabricated number on failure**: an unreadable balance shows `—` with the reason, never `0`.
@@ -174,6 +174,34 @@ Behaviour guarantees:
 > **Known limitation**: the account endpoint only provides aggregate balances, with no per-transaction detail — the AStudio desktop app itself is the same way (it directs users to the web to view details). So this page can reflect *balance changes* but cannot say *exactly how much this conversation consumed*.
 
 > **This number will not move while you chat through the plugin.** An unchanged balance does not mean nothing was spent — it means the call never entered AStudio's ledger at all. See [Billing and Points](#billing-and-points).
+
+### WeChat QR sign-in
+
+The top card of this section is the sign-in. **It needs neither an installed nor a running AStudio**: scan a WeChat code and the plugin exchanges it for the model key itself, storing the credential in `$DSH_HOME/.astudio-login.json` (mode `0600`, readable by this user only).
+
+It performs the same three calls the desktop app does — plain HTTPS, no device fingerprint, no signature, no local service:
+
+```
+GET  sso.xfyun.cn/SSOService/wx/scanlogin/qrcode?fd=<ticket>   → WeChat QR image URL
+GET  sso.xfyun.cn/SSOService/wx/scanlogin/uids?fd=<ticket>     → code -1 until scanned; then infoList[{uid, ssoSessionId}]
+GET  agent.xfyun.cn/xingchen-studio/bot/models/configs         → cookie from the scan; each row carries an api_key
+```
+
+That `api_key` is the same kind of value AStudio stores as `experimental_bearer_token`, so once signed in everything on this path — chat, catalog, probing, balances, claim — keeps working with the credential's source switched to the plugin. The ticket is eight characters from AStudio's own reduced alphabet (no `I/l/0/1/o/O`), good for about a minute.
+
+| Situation | Display |
+|---|---|
+| No sign-in at all | "No sign-in found" + **Sign in with WeChat** |
+| Using the app's sign-in | "Using the AStudio app's sign-in"; scanning still replaces it |
+| Waiting for the scan | The QR + "Waiting for the scan…", polled every 2 seconds; "The code expired" after a minute |
+| WeChat bound to several accounts | The account names are listed; one press finishes |
+| WeChat bound to no AStudio account | "That WeChat account has no AStudio account attached"; the code stays up for another WeChat |
+| Scanned, but the account offers no model key | "Signed in, but the account offers no model credential"; nothing is stored |
+| Signed in | "Signed in from DSH · Account …", and the button becomes **Sign out** |
+
+Precedence is **our own sign-in over AStudio's files**. The reasoning is plain: whoever scanned here already said which account to use, and silently falling back to a stale file from an app that may no longer be installed would make the QR flow look broken. **Sign out** deletes only our file — the app's session is untouched — and the store falls back to it.
+
+> The QR image is fetched by the host and inlined as a data URL, so the page loads nothing from a third-party origin.
 
 ### Daily login reward
 
@@ -235,11 +263,14 @@ The card reads the status document once on mount and then every 60 seconds; all 
 | `/astudio/status` | `GET` | Status document | loopback Host + Origin |
 | `/astudio/points` | `GET` | Points balance (`?refresh=1` bypasses the cache) | loopback Host + Origin |
 | `/astudio/claim` | `POST` | Book the daily login reward | loopback Host + Origin + in-process control key |
+| `/astudio/login/qr` | `POST` | Mint a sign-in ticket and its QR code | loopback Host + Origin + in-process control key |
+| `/astudio/login/qr/poll` | `POST` | Read the scan state; exchange and store the credential on a scan | loopback Host + Origin + in-process control key |
+| `/astudio/login/logout` | `POST` | Forget the plugin's own sign-in (the app's session is untouched) | loopback Host + Origin + in-process control key |
 | `/astudio/update` | `GET` | Version and update info | loopback Host + Origin |
 | `/astudio/probe/{modelId}` | `POST` | Reasoning-effort probing | loopback Host + Origin + in-process control key |
 | `/astudio/visibility/{modelId}` | `POST` | Model visibility (one per changed model, sent by Save) | loopback Host + Origin + in-process control key |
 
-Three write routes (probing, visibility, claim) require the same in-process control key (handed out with the status document, rotated per process, never persisted): the status route's loopback check stops a DNS-rebinding **page**, and that is not the same as authorising a **state-changing** action. The claim route additionally checks Origin — a cross-site `fetch` reaches `127.0.0.1` just as well, and "another page claimed points for me" is exactly what that header rules out.
+Five write routes (probing, visibility, claim, and the two sign-in routes) require the same in-process control key (handed out with the status document, rotated per process, never persisted): the status route's loopback check stops a DNS-rebinding **page**, and that is not the same as authorising a **state-changing** action. The claim route additionally checks Origin — a cross-site `fetch` reaches `127.0.0.1` just as well, and "another page claimed points for me" is exactly what that header rules out.
 
 ## DSH Version Support
 
@@ -275,19 +306,23 @@ A refused body is also written to `%TEMP%\dsh-astudio-connect\failed-requests\` 
 - [ ] **The balance gate does not cover the plugin**: AStudio itself returns `402` at zero balance, but that check lives inside its own local gateway, which the plugin bypasses (inferred, not tested).
 - [ ] **No per-transaction billing detail**: the account endpoint only provides aggregate balances, so Settings can only reflect balance changes; plugin calls produce no billing records at all, let alone detail.
 - [ ] **No long-term compatibility guarantee for upstream private endpoints**: the model catalog, account endpoint and reasoning-level information are the AStudio client's own interfaces rather than an official open API, and upstream changes may break the plugin. In that case it degrades to "last successful catalog", and says so plainly when there is no snapshot either, but long-term compatibility cannot be promised.
+- [ ] **QR sign-in depends on three private upstream endpoints**: `scanlogin/qrcode` and `scanlogin/uids` on `sso.xfyun.cn`, plus the `api_key` inside `bot/models/configs`. If upstream adds a captcha, a signature or a device fingerprint, sign-in stops working (the panel then says "Sign-in is unavailable"), though a credential already stored keeps working.
+- [ ] **A stored sign-in is not refreshed**: once its `ssoSessionId` expires you have to scan again; the plugin does not renew it (upstream exposes no renewal endpoint — the client simply signs in again).
+- [ ] **One QR sign-in per DSH home**: switching accounts means signing out first; no multi-account coexistence.
 - [ ] **The claim button depends on two hard-coded client identity headers**: `clientType` (platform) and `studioVersion` (the constant `3.5.5`). If upstream ever demands a build number, a signature or a device fingerprint, this path dies immediately and the button will only report "Unavailable".
 - [ ] **The CLI's `status` now issues one live fetch**: it waits for a real request so it can report the actual catalog source and model count; offline or signed out, it reports `empty` with the matching failure.
 - [ ] **No account-switch following**: unlike WorkBuddy's two variants, AStudio is a single product, so the plugin does not replicate variant-level capabilities.
 
 ## Security
 
-- Credentials are cached only in memory and never written to any file; points reads re-read the session file every time (so an AStudio re-login takes effect immediately) but only take `ssoSessionId`.
+- Credentials read from AStudio's files are cached only in memory and never written to any file; points reads re-read the session file every time (so an AStudio re-login takes effect immediately) but only take `ssoSessionId`.
+- **The only credential written to disk is the session the plugin's own QR sign-in produces**: `$DSH_HOME/.astudio-login.json`, mode `0600`, written only after a person presses **Sign in with WeChat** and completes a scan, and deleted by **Sign out**. Its `ssoSessionId` and model key never appear in any response, UI or log — the panel shows only the account id and nickname.
 - The shim binds only to `127.0.0.1` and accepts no external network access.
 - Inbound requests must pass four checks: Host, Origin, Content-Type and the Bearer shared secret; the Host check blocks DNS rebinding.
 - The shared secret is a random 32-byte value generated per process, compared in constant time with `timingSafeEqual`; the real AStudio token is resolved by the credential layer alone and never travels in a request header.
 - Tokens are never echoed in any UI or log; the CLI strips JWT-shaped strings from error text.
 - The points route and the status route apply the same loopback Host / Origin double check; responses contain only numbers and state, and account credentials stay inside the host process.
-- The claim route is the plugin's only account-side write: it reports that today's daily-reward popup is complete, writes no local file, and touches no other popup kind; its answer carries only a state, the amount and the new balance.
+- There are exactly two account-side writes: the claim route reports that today's daily-reward popup is complete and touches no other popup kind, and the sign-in routes write the file above only after a scan. Neither answer carries a credential — only a state and account identity.
 - Every upstream response is treated as untrusted input: streaming reads carry size caps, and route responses are re-validated in the browser before rendering.
 
 ## Development

@@ -14,9 +14,12 @@ const MODELS: AStudioModelInfo[] = [
 function mockStore(state: 'signed-in' | 'signed-out'): AStudioStatusStore {
   return {
     resolve: () => state === 'signed-in' ? 'token-abc' : undefined,
+    login: () => state === 'signed-in'
+      ? { source: 'client', accountId: 'acc-1' }
+      : { source: 'none' },
     status: async () => state === 'signed-in'
-      ? { state, configPath: 'config.toml', tokenLength: 10, hints: [] }
-      : { state, configPath: 'config.toml', hints: ['sign in'] },
+      ? { state, configPath: 'config.toml', tokenLength: 10, source: 'client', hints: [] }
+      : { state, configPath: 'config.toml', source: 'none', hints: ['sign in'] },
   }
 }
 

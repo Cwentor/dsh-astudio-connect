@@ -3,6 +3,7 @@ import { writeFileSync, unlinkSync, existsSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { run } from '../src/bin.ts'
+import { writeLoginSession } from '../src/login-session.ts'
 
 let stdout: string[]
 let stderr: string[]
@@ -34,9 +35,15 @@ afterEach(() => {
  * session plus the catalog snapshot from the machine it runs on. Without this
  * the test would answer from the signed-in desktop app next to it.
  */
-function isolated(): { dataHome: string, catalogPath: string } {
+function isolated(): { dataHome: string, catalogPath: string, loginSessionPath: string } {
   const dataHome = join(tmpdir(), `astudio-bin-home-${Date.now()}-${Math.random().toString(16).slice(2)}`)
-  return { dataHome, catalogPath: join(dataHome, 'catalog.json') }
+  return {
+    dataHome,
+    catalogPath: join(dataHome, 'catalog.json'),
+    // A QR sign-in on this machine would otherwise make every signed-out case
+    // here answer "signed in".
+    loginSessionPath: join(dataHome, '.astudio-login.json'),
+  }
 }
 
 describe('run', () => {
@@ -56,7 +63,7 @@ describe('run', () => {
 
   it('doctor outputs config path, file presence, and hints', async () => {
     writeFileSync(testFile, `experimental_bearer_token = "16c814c_test_token"`, 'utf8')
-    const code = await run(['doctor'], { configPath: testFile })
+    const code = await run(['doctor'], { configPath: testFile, ...isolated() })
     expect(code).toBe(0)
     const out = stdout.join('')
     expect(out).toContain(testFile)
@@ -66,10 +73,34 @@ describe('run', () => {
 
   it('logout clears the cache and does not delete the config file', async () => {
     writeFileSync(testFile, `experimental_bearer_token = "16c814c_test_token"`, 'utf8')
-    const code = await run(['logout'], { configPath: testFile })
+    const code = await run(['logout'], { configPath: testFile, ...isolated() })
     expect(code).toBe(0)
     expect(stdout.join('')).toContain('cleared')
     expect(existsSync(testFile)).toBe(true)
+  })
+
+  it('doctor is satisfied by a QR sign-in with no AStudio config at all', async () => {
+    // The whole point of the QR flow: AStudio may not be installed, so there is
+    // no config.toml to find — and its absence must not read as a failure.
+    const isolatedDirs = isolated()
+    const missing = join(tmpdir(), `astudio-bin-missing-${Date.now()}.toml`)
+    writeLoginSession({
+      version: 1,
+      accountId: 'acc-qr',
+      ssoSessionId: 'sso-qr',
+      modelBearerToken: 'token-qr',
+      loginMethod: 'wechat-qr',
+      loggedInAt: '2026-11-02T13:00:00.000Z',
+    }, isolatedDirs.loginSessionPath)
+
+    const code = await run(['doctor', '--json'], { configPath: missing, ...isolatedDirs })
+
+    expect(code).toBe(0)
+    const body = JSON.parse(stdout.join('')) as { signIn: string, signInSource: string, hints: string[] }
+    expect(body.signIn).toBe('signed-in')
+    expect(body.signInSource).toBe('dsh')
+    expect(body.hints.join(' ')).not.toContain('No AStudio config.toml')
+    expect(stdout.join('')).not.toContain('token-qr')
   })
 
   it('rejects a non-astudio --provider', async () => {

@@ -1,6 +1,6 @@
 /**
- * The AStudio section of DSH's Settings page: the account's two credit pools,
- * the daily-reward press, and the balance refresh.
+ * The AStudio section of DSH's Settings page: the sign-in card, the account's
+ * two credit pools, the daily-reward press, and the balance refresh.
  *
  * Migrated wholesale from the composer badge. A balance is account state, not
  * session state, and the badge had to disappear in every session that was not
@@ -11,6 +11,8 @@
  *
  * The nav row arrives through `settings.section`; the shell mounts one section
  * at a time, so this component's lifetime is "the panel is open, showing us".
+ * A sign-in or sign-out there re-reads the balance, because the account behind
+ * the numbers may have just changed.
  * That is why its mount read is a *fresh* one: opening this page is a person
  * asking for the current number, not a composer appearing by itself.
  *
@@ -21,6 +23,7 @@ import { useCallback, useEffect, useState } from 'react'
 import type { CSSProperties, ReactElement } from 'react'
 import type { PropsLocale } from '@deepseek-ai/dsh-client-ui-slots'
 import type { AStudioWebPoints } from '../status-paths.ts'
+import { AStudioLoginCard } from './AStudioLoginCard.tsx'
 import { claimDailyReward, readControlKey, readPoints } from './points-client.ts'
 
 /** Props the Settings shell delivers: this entry's copy, from its own namespace. */
@@ -204,6 +207,9 @@ export function AStudioPointsSection({ t }: AStudioPointsSectionProps): ReactEle
 
   return (
     <div style={sectionStyle}>
+      {/* Sign-in first: the balances below are that account's, so the card that
+          says which account it is belongs above them, not after. */}
+      <AStudioLoginCard t={t} onCredentialsChanged={() => { void read(true) }} />
       <div style={cardStyle}>
         <div style={rowStyle}>
           <span>{t('generalPoints')}</span>

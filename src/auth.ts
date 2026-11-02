@@ -6,6 +6,12 @@
  * Both files live under one AStudio data root, discovered per platform rather
  * than assumed at a fixed absolute path; see ./locations.ts.
  *
+ * A sign-in this plugin performed itself (`./login-session.ts`, from the QR
+ * flow) takes precedence over both files. That is the point of the QR flow:
+ * with no app installed there is no config.toml to read, and with one installed
+ * the person who signed in here has already said which account to use.
+ * Signing out of it falls back to the app's files.
+ *
  * @module dsh-astudio-connect/auth
  */
 
@@ -16,6 +22,9 @@ import {
   readStorageRegistry,
   resolveAstudioHome,
 } from './locations.ts'
+import type { AStudioLoginSession } from './login-session.ts'
+import { astudioLoginSessionPath, clearLoginSession, describeLoginSession, readLoginSession } from './login-session.ts'
+import type { AStudioWebLogin } from './status-paths.ts'
 
 /** Regex for the bearer-token field in config.toml. */
 const TOKEN_PATTERN = /experimental_bearer_token\s*=\s*"([^"]+)"/
@@ -35,6 +44,8 @@ export interface AStudioAuthStatus {
   tokenLength?: number
   /** Whether a model-manager token was also found. */
   hasModelToken?: boolean
+  /** Which of the two sources the credential came from. */
+  source: AStudioWebLogin['source']
   hints: string[]
 }
 
@@ -47,6 +58,13 @@ export interface AStudioAuthOptions {
   configPath?: string
   /** Override the whole AStudio data root (used by tests). */
   dataHome?: string
+  /**
+   * The plugin's own sign-in file (see `./login-session.ts`).
+   *
+   * Defaults to {@link astudioLoginSessionPath}, under the DSH home. Overridable
+   * so tests — and anyone running two DSH profiles — can point it elsewhere.
+   */
+  loginSessionPath?: string
 }
 
 /** Options for {@link resolveDefaultConfigPath}. */
@@ -77,13 +95,13 @@ export function readTokenFromConfig(configPath: string): AStudioCredential {
 }
 
 /**
- * Read the model-manager token from astron-session.json.
+ * Read one string field out of astron-session.json.
  *
- * AStudio issues this separately from the chat token; it authenticates the
- * model-manager API that serves the authoritative roster. Returns undefined
- * for a missing file, malformed JSON, an absent field, or a blank value.
+ * Returns undefined for a missing file, malformed JSON, an absent field, or a
+ * blank value — every one of which means "the app has not signed in", a normal
+ * state rather than an error.
  */
-export function readModelBearerToken(sessionPath: string): AStudioCredential {
+function readSessionField(sessionPath: string, field: string): AStudioCredential {
   if (!existsSync(sessionPath)) return undefined
   let content: string
   try {
@@ -98,9 +116,29 @@ export function readModelBearerToken(sessionPath: string): AStudioCredential {
     return undefined
   }
   if (typeof parsed !== 'object' || parsed === null) return undefined
-  const value = (parsed as Record<string, unknown>)['modelBearerToken']
+  const value = (parsed as Record<string, unknown>)[field]
   if (typeof value !== 'string' || value.trim() === '') return undefined
   return value.trim()
+}
+
+/**
+ * Read the model-manager token from astron-session.json.
+ *
+ * AStudio issues this separately from the chat token; it authenticates the
+ * model-manager API that serves the authoritative roster.
+ */
+export function readModelBearerToken(sessionPath: string): AStudioCredential {
+  return readSessionField(sessionPath, 'modelBearerToken')
+}
+
+/**
+ * Read the account cookie from astron-session.json.
+ *
+ * The balance, popup and model-config APIs authenticate with this cookie rather
+ * than with either bearer token.
+ */
+export function readClientSsoSessionId(sessionPath: string): AStudioCredential {
+  return readSessionField(sessionPath, 'ssoSessionId')
 }
 
 /**
@@ -134,10 +172,16 @@ function resolveHomeForOptions(options: ResolveConfigPathOptions): string | unde
  * Create a credential store that reads both AStudio files and caches the
  * results in memory. Call `invalidate()` to force a re-read (e.g. after the
  * user signs in again).
+ *
+ * The plugin's own sign-in is read on every call rather than cached. It is one
+ * small file, and it is the one credential that can change without this store
+ * being told: a person scanning a code, or signing out, has to take effect on
+ * the next read, not on the next restart.
  */
 export function createAStudioAuth(options: AStudioAuthOptions = {}) {
   const dataHome = options.dataHome
   const explicitConfig = options.configPath
+  const loginPath = options.loginSessionPath ?? astudioLoginSessionPath()
   let cachedToken: AStudioCredential | null = null
   let cachedModelToken: AStudioCredential | null = null
   let cachedConfigPath: string | undefined
@@ -159,60 +203,121 @@ export function createAStudioAuth(options: AStudioAuthOptions = {}) {
     return sessionFilePathForHome(resolvedHomeFromConfig(configPath()))
   }
 
-  const current = (): AStudioCredential => {
+  /** The plugin's own sign-in, if any. */
+  const own = (): AStudioLoginSession | undefined => readLoginSession(loginPath)
+
+  /** The app's chat token, from config.toml. Cached: only AStudio rewrites it. */
+  const clientToken = (): AStudioCredential => {
     if (cachedToken !== null) return cachedToken
     cachedToken = readTokenFromConfig(configPath())
     return cachedToken
   }
 
-  const currentModelToken = (): AStudioCredential => {
+  /** The app's model key, from astron-session.json. Cached for the same reason. */
+  const clientModelToken = (): AStudioCredential => {
     if (cachedModelToken !== null) return cachedModelToken
     cachedModelToken = readModelBearerToken(sessionPath())
     return cachedModelToken
   }
 
+  /**
+   * Which source the credential came from.
+   *
+   * `dsh` and `client` are decided by whether our own file holds a usable key —
+   * an own sign-in that somehow lacks one does not make the app's token "ours".
+   */
+  const login = (): AStudioWebLogin => {
+    const session = own()
+    if (session !== undefined && session.modelBearerToken !== undefined) return describeLoginSession(session)
+    const token = clientToken()
+    if (token === undefined) return { source: 'none' }
+    const accountId = readSessionField(sessionPath(), 'accountId')
+    const loggedInAt = readSessionField(sessionPath(), 'loggedInAt')
+    return {
+      source: 'client',
+      ...(accountId === undefined ? {} : { accountId }),
+      ...(loggedInAt === undefined ? {} : { loggedInAt }),
+    }
+  }
+
+  /** The chat token in use: our own sign-in wins over the app's. */
+  const resolvedToken = (): AStudioCredential => own()?.modelBearerToken ?? clientToken()
+
+  /** The model key in use, with the same precedence. */
+  const resolvedModelToken = (): AStudioCredential => own()?.modelBearerToken ?? clientModelToken()
+
   return {
     resolve(): AStudioCredential {
-      return current()
+      return resolvedToken()
     },
     modelBearerToken(): AStudioCredential {
-      return currentModelToken()
+      return resolvedModelToken()
     },
     /**
-     * The `astron-session.json` this store reads its credentials from.
+     * The account cookie the balance, popup and claim routes authenticate with.
      *
-     * The points client reads the account's `ssoSessionId` from the same file,
-     * so it is resolved here — where AStudio's layout is already known — rather
-     * than re-derived by the caller.
+     * Resolved here because this is the module that knows both places a
+     * credential can live; a caller that re-derived it would have to know the
+     * precedence too.
+     */
+    ssoSessionId(): AStudioCredential {
+      return own()?.ssoSessionId ?? readClientSsoSessionId(sessionPath())
+    },
+    /**
+     * The `astron-session.json` this store reads the app's credentials from.
+     *
+     * Still reported for the status card, which names the file it looked at —
+     * not used for the plugin's own sign-in.
      */
     sessionPath(): string {
       return sessionPath()
     },
+    /** The file the plugin's own sign-in lives in, for diagnostics. */
+    loginSessionPath(): string {
+      return loginPath
+    },
+    /** Which sign-in is in use, in UI-safe terms. */
+    login,
     invalidate(): void {
       cachedToken = null
       cachedModelToken = null
     },
     async status(): Promise<AStudioAuthStatus> {
-      const token = current()
+      const source = login().source
+      const token = resolvedToken()
       if (token === undefined) {
         return {
           state: 'signed-out',
           configPath: configPath(),
-          hints: ['AStudio config.toml was not found or has no experimental_bearer_token. Open AStudio and sign in.'],
+          source,
+          hints: [
+            source === 'none'
+              ? 'No sign-in found: neither this plugin nor the AStudio app holds a credential. Sign in from the AStudio points section, or open AStudio.'
+              : 'A sign-in was found but carries no model key; re-run the QR sign-in or open AStudio.',
+          ],
         }
       }
-      const hasModelToken = currentModelToken() !== undefined
+      const hasModelToken = resolvedModelToken() !== undefined
       return {
         state: 'signed-in',
         configPath: configPath(),
         tokenLength: token.length,
         hasModelToken,
+        source,
         hints: hasModelToken
           ? []
-          : ['astron-session.json has no modelBearerToken; no model list can be read, so no models will be offered.'],
+          : ['No model key is available; no model list can be read, so no models will be offered.'],
       }
     },
+    /**
+     * Forget the plugin's own sign-in.
+     *
+     * Only our file is deleted — the app's session is the app's to clear. After
+     * this the store falls back to whatever AStudio has on disk, which is why
+     * `invalidate()` follows: the cached fallback may predate this call.
+     */
     async logout(): Promise<void> {
+      clearLoginSession(loginPath)
       cachedToken = null
       cachedModelToken = null
     },

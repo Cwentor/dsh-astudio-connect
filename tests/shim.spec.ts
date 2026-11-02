@@ -6,7 +6,7 @@ import { request } from 'node:http'
 import { writeFileSync, unlinkSync, existsSync, readdirSync, readFileSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
-import { createAStudioAuth } from '../src/auth.ts'
+import { testAuth } from './support/auth.ts'
 import { createAStudioUpstream } from '../src/upstream.ts'
 import { createAStudioCatalog } from '../src/catalog.ts'
 import { createAStudioShim, sanitizeGatewayBody, repairChatBody, dropUnsupportedEffort } from '../src/shim.ts'
@@ -61,7 +61,7 @@ afterAll(async () => {
 })
 
 beforeEach(async () => {
-  const store = createAStudioAuth({ configPath: testFile })
+  const store = testAuth({ configPath: testFile })
   const upstream = createAStudioUpstream({ baseUrl: `http://127.0.0.1:${mockPort}/v1` })
   const catalog = createAStudioCatalog({
     upstream,
@@ -188,7 +188,7 @@ describe('createAStudioShim', () => {
   it('returns 401 when token not available', async () => {
     // Use a store pointing to a missing file
     const emptyFile = join(tmpdir(), `astudio-empty-${Date.now()}.toml`)
-    const store2 = createAStudioAuth({ configPath: emptyFile })
+    const store2 = testAuth({ configPath: emptyFile })
     const upstream2 = createAStudioUpstream({ baseUrl: `http://127.0.0.1:${mockPort}/v1` })
     const catalog2 = createAStudioCatalog({
       upstream: upstream2,
@@ -246,7 +246,7 @@ describe('gateway shape fallback', () => {
   }
 
   async function startShim(): Promise<{ url: string, token: string, warnings: string[] }> {
-    const store = createAStudioAuth({ configPath: testFile })
+    const store = testAuth({ configPath: testFile })
     const upstream = createAStudioUpstream({ baseUrl: gatewayBase })
     const catalog = createAStudioCatalog({
       upstream,
@@ -514,7 +514,7 @@ describe('self-diagnosis', () => {
   }
 
   async function startShim(): Promise<{ url: string, token: string, warnings: string[] }> {
-    const store = createAStudioAuth({ configPath: testFile })
+    const store = testAuth({ configPath: testFile })
     const upstream = createAStudioUpstream({ baseUrl: `http://127.0.0.1:${(gateway.address() as AddressInfo).port}/v1` })
     const catalog = createAStudioCatalog({ upstream, token: () => store.resolve() })
     const warnings: string[] = []

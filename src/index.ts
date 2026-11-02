@@ -1,11 +1,13 @@
 /**
- * AStudio models for DeepSeek Harness, reusing the AStudio app's sign-in.
- * Registers one provider route — `astudio` — while streaming, tool calls,
- * compaction, and permissions stay Harness-owned.
+ * AStudio models for DeepSeek Harness, reusing an AStudio sign-in — either the
+ * app's own or one performed here by scanning a WeChat code. Registers one
+ * provider route — `astudio` — while streaming, tool calls, compaction, and
+ * permissions stay Harness-owned.
  *
- * Wiring, in short: auth.ts reads `experimental_bearer_token` from AStudio's
- * config.toml (memory only), shim.ts exposes an OpenAI-compatible endpoint on
- * 127.0.0.1, and adapter.ts registers that endpoint as the `astudio` provider:
+ * Wiring, in short: auth.ts resolves the model key from the plugin's own
+ * sign-in file first and AStudio's `config.toml` second, shim.ts exposes an
+ * OpenAI-compatible endpoint on 127.0.0.1, and adapter.ts registers that
+ * endpoint as the `astudio` provider:
  *
  *   DSH llm seam -> pi-ai adapter -> 127.0.0.1 shim -> maas-api
  *
@@ -41,6 +43,9 @@ import { createAStudioPointsClient } from './points.ts'
 import { registerAStudioPointsRoute } from './points-route.ts'
 import { createAStudioDailyRewardClient } from './daily-reward.ts'
 import { registerAStudioClaimRoute } from './claim-route.ts'
+import { createAStudioQrLogin } from './qr-login.ts'
+import { registerAStudioLoginRoutes } from './login-route.ts'
+import { astudioLoginSessionPath, writeLoginSession } from './login-session.ts'
 import { piAiVersionWarning } from './pi-ai-guard.ts'
 
 export { ASTRO_PROVIDER, ASTRO_STREAM_IDLE_TIMEOUT_MS, createAStudioAdapter } from './adapter.ts'
@@ -51,6 +56,16 @@ export { createAStudioCatalog } from './catalog.ts'
 export type { AStudioCatalog, AStudioCatalogFailure, AStudioCatalogSource, AStudioModelInfo } from './catalog.ts'
 export { createAStudioPointsClient, parseAStudioPointsBalance, readSsoSessionId } from './points.ts'
 export { createAStudioDailyRewardClient } from './daily-reward.ts'
+export { createAStudioQrLogin, createWechatFd, pickModelKey } from './qr-login.ts'
+export type { AStudioQrLogin, AStudioQrLoginOptions } from './qr-login.ts'
+export {
+  astudioLoginSessionPath,
+  clearLoginSession,
+  parseLoginSession,
+  readLoginSession,
+  writeLoginSession,
+} from './login-session.ts'
+export type { AStudioLoginSession } from './login-session.ts'
 
 /**
  * Host services this plugin reads.
@@ -268,10 +283,12 @@ function registerAStudioWebRoutes(
   // Register the update route on the host web server.
   registerAStudioUpdateRoute(ctx, { currentVersion: ASTRO_VERSION })
 
-  // Register the points route backing the settings section. The client re-reads
-  // the session file on every upstream call, so an AStudio re-login is picked up
-  // by the next ↻ rather than pinning the section to an expired session.
-  const pointsClient = createAStudioPointsClient({ sessionPath: store.sessionPath() })
+  // Register the points route backing the settings section. The cookie comes
+  // from the credential store, which prefers the plugin's own sign-in and falls
+  // back to the app's file — and re-reads it on every call, so either kind of
+  // re-login is picked up by the next ↻ rather than pinning the section to an
+  // expired session.
+  const pointsClient = createAStudioPointsClient({ sessionId: () => store.ssoSessionId() })
   registerAStudioPointsRoute(ctx, { client: pointsClient })
 
   // Register the daily-reward claim route. It shares the balance client so the
@@ -279,9 +296,27 @@ function registerAStudioWebRoutes(
   // that changes account state — hence the control key.
   registerAStudioClaimRoute(ctx, {
     client: createAStudioDailyRewardClient({
-      sessionPath: store.sessionPath(),
+      sessionId: () => store.ssoSessionId(),
       points: pointsClient,
     }),
+  }, controlKey)
+
+  // Register the QR sign-in routes. A sign-in changes the token AND the roster
+  // it can reach, so the success path drops the cached credential, re-reads the
+  // catalog and announces the change — otherwise the picker keeps offering the
+  // previous account's models until the next restart.
+  const afterSignInChange = (): void => {
+    store.invalidate()
+    void catalog.refresh().catch(() => {})
+    announceModelsChanged()
+  }
+  registerAStudioLoginRoutes(ctx, {
+    client: createAStudioQrLogin({
+      save: session => { writeLoginSession(session, astudioLoginSessionPath()) },
+    }),
+    onAuthenticated: afterSignInChange,
+    onSignedOut: afterSignInChange,
+    signOut: () => store.logout(),
   }, controlKey)
 
   // Register the probe route on the host web server.

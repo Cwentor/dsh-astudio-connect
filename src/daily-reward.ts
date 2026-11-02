@@ -25,7 +25,7 @@
  */
 
 import type { AStudioPointsClient } from './points.ts'
-import { ASTRO_STUDIO_API_BASE, readSsoSessionId } from './points.ts'
+import { ASTRO_STUDIO_API_BASE } from './points.ts'
 import type { AStudioWebClaim } from './status-paths.ts'
 
 /** Popup list endpoint, resolved against the account API base. */
@@ -67,8 +67,13 @@ export function astudioClientType(platform: NodeJS.Platform = process.platform):
 
 /** Options for {@link createAStudioDailyRewardClient}. */
 export interface AStudioDailyRewardClientOptions {
-  /** The `astron-session.json` holding `ssoSessionId`. */
-  sessionPath: string
+  /**
+   * The account cookie, or undefined when nobody is signed in.
+   *
+   * A provider, so the cookie can come from the AStudio app's session file or
+   * from a sign-in this plugin made itself.
+   */
+  sessionId: () => string | undefined
   /** Balance client used to report the post-claim balance. */
   points: AStudioPointsClient
   /** Injected for tests. */
@@ -199,7 +204,7 @@ export function createAStudioDailyRewardClient(options: AStudioDailyRewardClient
 
   return {
     async claim(): Promise<AStudioWebClaim> {
-      const sessionId = readSsoSessionId(options.sessionPath)
+      const sessionId = options.sessionId()
       if (sessionId === undefined) return { status: 'signed-out' }
       // A platform AStudio does not ship on cannot pass the gateway's identity
       // check, so there is nothing to send.

@@ -128,7 +128,7 @@ describe('the points client', () => {
     let seenHeaders: Headers | undefined
     let seenUrl = ''
     const client = createAStudioPointsClient({
-      sessionPath: path,
+      sessionId: () => readSsoSessionId(path),
       fetchImpl: (async (input: string, init: RequestInit) => {
         seenUrl = input
         seenHeaders = new Headers(init.headers)
@@ -146,7 +146,7 @@ describe('the points client', () => {
     const path = await sessionFile({ ssoSessionId: 'sso-abc' })
     let calls = 0
     const client = createAStudioPointsClient({
-      sessionPath: path,
+      sessionId: () => readSsoSessionId(path),
       fetchImpl: (async () => {
         calls += 1
         return new Response(JSON.stringify(balanceResponse()), { status: 200 })
@@ -162,7 +162,7 @@ describe('the points client', () => {
     let calls = 0
     let now = 1_000_000
     const client = createAStudioPointsClient({
-      sessionPath: path,
+      sessionId: () => readSsoSessionId(path),
       now: () => now,
       fetchImpl: (async () => {
         calls += 1
@@ -179,7 +179,7 @@ describe('the points client', () => {
     const path = await sessionFile({ ssoSessionId: 'sso-abc' })
     let calls = 0
     const client = createAStudioPointsClient({
-      sessionPath: path,
+      sessionId: () => readSsoSessionId(path),
       fetchImpl: (async () => {
         calls += 1
         return new Response(JSON.stringify(balanceResponse()), { status: 200 })
@@ -194,7 +194,7 @@ describe('the points client', () => {
     const path = await sessionFile({ ssoSessionId: 'sso-old' })
     const cookies: string[] = []
     const client = createAStudioPointsClient({
-      sessionPath: path,
+      sessionId: () => readSsoSessionId(path),
       fetchImpl: (async (_input: string, init: RequestInit) => {
         cookies.push(new Headers(init.headers).get('cookie') ?? '')
         return new Response(JSON.stringify(balanceResponse()), { status: 200 })
@@ -211,7 +211,7 @@ describe('the points client', () => {
     const path = await sessionFile({ accountId: 'x' })
     let calls = 0
     const client = createAStudioPointsClient({
-      sessionPath: path,
+      sessionId: () => readSsoSessionId(path),
       fetchImpl: (async () => {
         calls += 1
         return new Response('{}')
@@ -225,7 +225,7 @@ describe('the points client', () => {
     const path = await sessionFile({ ssoSessionId: 'sso-abc' })
     let calls = 0
     const client = createAStudioPointsClient({
-      sessionPath: path,
+      sessionId: () => readSsoSessionId(path),
       fetchImpl: (async () => {
         calls += 1
         if (calls === 1) throw new Error('network down')
@@ -241,7 +241,7 @@ describe('the points client', () => {
   it('reports expired on HTTP 401', async () => {
     const path = await sessionFile({ ssoSessionId: 'sso-abc' })
     const client = createAStudioPointsClient({
-      sessionPath: path,
+      sessionId: () => readSsoSessionId(path),
       fetchImpl: (async () => new Response('{}', { status: 401 })) as unknown as typeof fetch,
     })
     expect(await client.read()).toEqual({ status: 'expired' })
@@ -250,7 +250,7 @@ describe('the points client', () => {
   it('never leaks the credential into a failure state', async () => {
     const path = await sessionFile({ ssoSessionId: 'sso-secret-value' })
     const client = createAStudioPointsClient({
-      sessionPath: path,
+      sessionId: () => readSsoSessionId(path),
       fetchImpl: (async () => { throw new Error('boom') }) as unknown as typeof fetch,
     })
     const result = await client.read()

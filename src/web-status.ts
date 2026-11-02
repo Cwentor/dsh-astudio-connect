@@ -15,11 +15,23 @@ import type { AStudioCatalog } from './catalog.ts'
 import type { AStudioProbeRecord, AStudioProbeStore } from './probe-store.ts'
 import { ASTRO_LOCAL_IDENTITY } from './identity.ts'
 import { hostIsLoopback } from './loopback.ts'
-import { ASTRO_STATUS_PATH, type AStudioWebProbe, type AStudioWebStatus } from './status-paths.ts'
+import {
+  ASTRO_STATUS_PATH,
+  type AStudioWebLogin,
+  type AStudioWebProbe,
+  type AStudioWebStatus,
+} from './status-paths.ts'
 
 /** Status store surface — the credential store plus the sign-in summary. */
 export interface AStudioStatusStore extends AStudioCredentialStore {
   status(): Promise<AStudioAuthStatus>
+  /**
+   * Which sign-in is in use.
+   *
+   * Optional so a store that predates the QR flow still satisfies the type; the
+   * section then reads the source as unknown and offers the QR sign-in anyway.
+   */
+  login?(): AStudioWebLogin
 }
 
 /** Options for the status route. */
@@ -79,6 +91,15 @@ export function registerAStudioStatusRoute(ctx: Context, options: AStudioStatusR
       }
 
       const authStatus = await store.status()
+      // Reported alongside the credential state rather than inside it: "signed
+      // in" and "signed in with which sign-in" are different questions, and the
+      // panel answers them in different places.
+      let login: AStudioWebLogin | undefined
+      try {
+        login = store.login?.()
+      } catch {
+        login = undefined
+      }
       const models = catalog.current()
       const failure = catalog.failure()
       const probe: AStudioWebProbe = options.probe === undefined
@@ -101,6 +122,7 @@ export function registerAStudioStatusRoute(ctx: Context, options: AStudioStatusR
           hidden: [...catalog.hiddenModelIds()],
         },
         probe,
+        ...(login === undefined ? {} : { login }),
         ...(options.controlKey !== undefined ? { controlKey: options.controlKey } : {}),
       }
 
