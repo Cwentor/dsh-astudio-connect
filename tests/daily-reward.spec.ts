@@ -1,6 +1,7 @@
 import { mkdtemp, rm, writeFile, mkdir } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { readFileSync } from 'node:fs'
 import { afterEach, describe, expect, it } from 'vitest'
 import {
   astudioClientType,
@@ -9,8 +10,8 @@ import {
   ASTRO_DAILY_REWARD_PENDING_PATH,
   ASTRO_STUDIO_VERSION,
 } from '../src/daily-reward.ts'
+import type { AStudioDailyRewardCredentials } from '../src/daily-reward.ts'
 import type { AStudioPointsClient } from '../src/points.ts'
-import { readSsoSessionId } from '../src/points.ts'
 import type { AStudioWebPoints } from '../src/status-paths.ts'
 
 /**
@@ -38,7 +39,38 @@ async function sessionFile(content: unknown): Promise<string> {
   return path
 }
 
-const SIGNED_IN = { ssoSessionId: 'sso-value', modelBearerToken: 'model-value' }
+const SIGNED_IN = {
+  ssoSessionId: 'sso-value',
+  accountId: '21904980315',
+  token: 'account-token',
+  modelBearerToken: 'model-value',
+}
+
+/**
+ * The credentials the real store would hand over, read from a throwaway file.
+ *
+ * Deliberately mirrors `AuthStore.claimCredentials` — the cookie shape is the
+ * thing under test here, so faking it inline would test nothing.
+ */
+function claimCredentialsAt(sessionPath: string): AStudioDailyRewardCredentials | undefined {
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(readFileSync(sessionPath, 'utf8'))
+  } catch {
+    return undefined
+  }
+  if (typeof parsed !== 'object' || parsed === null) return undefined
+  const record = parsed as Record<string, unknown>
+  const ssoSessionId = record['ssoSessionId']
+  if (typeof ssoSessionId !== 'string' || ssoSessionId === '') return undefined
+  const accountId = record['accountId']
+  const token = record['token']
+  return {
+    ssoSessionId,
+    ...(typeof accountId === 'string' ? { accountId } : {}),
+    ...(typeof token === 'string' ? { token } : {}),
+  }
+}
 
 /** Balance document the shared points client answers with after a claim. */
 const BALANCE: AStudioWebPoints = {
@@ -66,13 +98,15 @@ function envelope(data: unknown, code = 0): Record<string, unknown> {
   return { flag: code === 0, code, desc: code === 0 ? '成功' : 'failed', data }
 }
 
-/** The popup list as the live gateway shapes it. */
+/** The popup list as the live gateway shapes it: `popupId` is an integer. */
 function pendingList(): Record<string, unknown>[] {
   return [
     {
-      popupId: 'popup-1',
-      popupCode: 'DAILY_REWARD_2026_11_03',
+      popupId: 91234,
+      popupCode: 'DAILY_REWARD_2026_11_04',
+      popupType: 'BANNER',
       componentType: 'DAILY_REWARD_DIALOG',
+      priority: 100,
       instanceKey: 'instance-1',
       payload: { points: '100' },
     },
@@ -102,8 +136,12 @@ function assertCall(call: { url: string, init: RequestInit | undefined }, path: 
   // The gateway answers 11001001 without both identity headers.
   expect(headers['clientType']).toBe('21')
   expect(headers['studioVersion']).toBe(ASTRO_STUDIO_VERSION)
-  // Exactly the session cookie: the chat and model-manager tokens stay home.
-  expect(headers['Cookie']).toBe('ssoSessionId=sso-value')
+  // The four cookie pairs the desktop client sends. `account_id` and `token`
+  // are what make the request account-scoped: without them the popup service
+  // answers an empty list, which is indistinguishable from "no reward today".
+  expect(headers['Cookie']).toBe(
+    'ssoSessionId=sso-value; sso_sessionid=sso-value; account_id=21904980315; token=account-token',
+  )
 }
 
 describe('astudioClientType', () => {
@@ -127,7 +165,7 @@ describe('createAStudioDailyRewardClient', () => {
     })
 
     const result = await createAStudioDailyRewardClient({
-      sessionId: () => readSsoSessionId(sessionPath),
+      credentials: () => claimCredentialsAt(sessionPath),
       points: points.client,
       fetchImpl,
       clientType: '21',
@@ -143,7 +181,7 @@ describe('createAStudioDailyRewardClient', () => {
     expect(calls[1]!.init?.method).toBe('POST')
     // Both values are echoed exactly as the pending list gave them: no
     // signature, no locally invented key.
-    expect(JSON.parse(String(calls[1]!.init?.body))).toEqual({ popupId: 'popup-1', instanceKey: 'instance-1' })
+    expect(JSON.parse(String(calls[1]!.init?.body))).toEqual({ popupId: 91234, instanceKey: 'instance-1' })
     // The follow-up balance is a fresh read, never the 30-second cache.
     expect(points.reads).toEqual([{ fresh: true }])
   })
@@ -153,12 +191,12 @@ describe('createAStudioDailyRewardClient', () => {
     const points = stubPoints()
     const { fetchImpl, calls } = recordingFetch({
       pending: () => new Response(JSON.stringify(envelope([
-        { popupId: 'popup-2', componentType: 'ANNOUNCEMENT_BANNER', instanceKey: 'k', payload: {} },
+        { popupId: 91235, componentType: 'ANNOUNCEMENT_BANNER', instanceKey: 'k', payload: {} },
       ]))),
     })
 
     const result = await createAStudioDailyRewardClient({
-      sessionId: () => readSsoSessionId(sessionPath),
+      credentials: () => claimCredentialsAt(sessionPath),
       points: points.client,
       fetchImpl,
       clientType: '21',
@@ -176,13 +214,13 @@ describe('createAStudioDailyRewardClient', () => {
     const points = stubPoints()
     const { fetchImpl } = recordingFetch({
       pending: () => new Response(JSON.stringify(envelope([
-        { popupId: 'popup-1', componentType: 'DAILY_REWARD_DIALOG', instanceKey: 'instance-1' },
+        { popupId: 91234, componentType: 'DAILY_REWARD_DIALOG', instanceKey: 'instance-1' },
       ]))),
       complete: () => new Response(JSON.stringify(envelope(null))),
     })
 
     const result = await createAStudioDailyRewardClient({
-      sessionId: () => readSsoSessionId(sessionPath),
+      credentials: () => claimCredentialsAt(sessionPath),
       points: points.client,
       fetchImpl,
       clientType: '21',
@@ -192,7 +230,7 @@ describe('createAStudioDailyRewardClient', () => {
     expect(result).toEqual({ status: 'claimed', balance: BALANCE })
   })
 
-  it('treats an already-completed popup as claimed rather than as a failure', async () => {
+  it('reports already, not claimed, when every popup was booked before this press', async () => {
     const sessionPath = await sessionFile(SIGNED_IN)
     const points = stubPoints()
     const { fetchImpl } = recordingFetch({
@@ -201,15 +239,43 @@ describe('createAStudioDailyRewardClient', () => {
     })
 
     const result = await createAStudioDailyRewardClient({
-      sessionId: () => readSsoSessionId(sessionPath),
+      credentials: () => claimCredentialsAt(sessionPath),
       points: points.client,
       fetchImpl,
       clientType: '21',
     }).claim()
 
-    // A second press cannot mint credit — upstream answers 11003002 — and that
-    // is "you already have today's reward", not "the claim failed".
-    expect(result.status).toBe('claimed')
+    // A second press cannot mint credit — upstream answers 11003002. That is
+    // "the reward is already yours", which is a different sentence from
+    // "+100", and a different one again from "nothing to claim".
+    expect(result).toEqual({ status: 'already' })
+    expect(points.reads).toEqual([])
+  })
+
+  it('reports claimed when one popup booked and another was already done', async () => {
+    const sessionPath = await sessionFile(SIGNED_IN)
+    const points = stubPoints()
+    let completed = 0
+    const { fetchImpl } = recordingFetch({
+      pending: () => new Response(JSON.stringify(envelope([
+        { popupId: 1, componentType: 'DAILY_REWARD_DIALOG', instanceKey: 'a', payload: { points: '100' } },
+        { popupId: 2, componentType: 'DAILY_REWARD_DIALOG', instanceKey: 'b', payload: { points: '50' } },
+      ]))),
+      complete: () => {
+        completed += 1
+        return new Response(JSON.stringify(completed === 1 ? envelope(null) : envelope(null, 11003002)))
+      },
+    })
+
+    const result = await createAStudioDailyRewardClient({
+      credentials: () => claimCredentialsAt(sessionPath),
+      points: points.client,
+      fetchImpl,
+      clientType: '21',
+    }).claim()
+
+    // Only the reward this press actually booked counts toward the amount.
+    expect(result).toEqual({ status: 'claimed', points: 100, balance: BALANCE })
   })
 
   it('reports unavailable when the completion itself fails', async () => {
@@ -221,7 +287,7 @@ describe('createAStudioDailyRewardClient', () => {
     })
 
     const result = await createAStudioDailyRewardClient({
-      sessionId: () => readSsoSessionId(sessionPath),
+      credentials: () => claimCredentialsAt(sessionPath),
       points: points.client,
       fetchImpl,
       clientType: '21',
@@ -238,7 +304,7 @@ describe('createAStudioDailyRewardClient', () => {
     const { fetchImpl, calls } = recordingFetch({})
 
     const result = await createAStudioDailyRewardClient({
-      sessionId: () => readSsoSessionId(sessionPath),
+      credentials: () => claimCredentialsAt(sessionPath),
       points: points.client,
       fetchImpl,
       clientType: '21',
@@ -254,7 +320,7 @@ describe('createAStudioDailyRewardClient', () => {
     const { fetchImpl, calls } = recordingFetch({})
 
     const result = await createAStudioDailyRewardClient({
-      sessionId: () => readSsoSessionId(sessionPath),
+      credentials: () => claimCredentialsAt(sessionPath),
       points: points.client,
       fetchImpl,
       clientType: undefined,
@@ -271,7 +337,7 @@ describe('createAStudioDailyRewardClient', () => {
     const points = stubPoints()
 
     const byCode = await createAStudioDailyRewardClient({
-      sessionId: () => readSsoSessionId(sessionPath),
+      credentials: () => claimCredentialsAt(sessionPath),
       points: points.client,
       fetchImpl: recordingFetch({ pending: () => new Response(JSON.stringify(envelope(null, 80000))) }).fetchImpl,
       clientType: '21',
@@ -279,7 +345,7 @@ describe('createAStudioDailyRewardClient', () => {
     expect(byCode).toEqual({ status: 'expired' })
 
     const byStatus = await createAStudioDailyRewardClient({
-      sessionId: () => readSsoSessionId(sessionPath),
+      credentials: () => claimCredentialsAt(sessionPath),
       points: points.client,
       fetchImpl: recordingFetch({ pending: () => new Response('', { status: 401 }) }).fetchImpl,
       clientType: '21',
@@ -293,13 +359,61 @@ describe('createAStudioDailyRewardClient', () => {
     const fetchImpl = (async () => { throw new TypeError('fetch failed') }) as unknown as typeof fetch
 
     const result = await createAStudioDailyRewardClient({
-      sessionId: () => readSsoSessionId(sessionPath),
+      credentials: () => claimCredentialsAt(sessionPath),
       points: points.client,
       fetchImpl,
       clientType: '21',
     }).claim()
 
     expect(result).toEqual({ status: 'unavailable' })
+  })
+
+  it('accepts a popup id that arrives as digits in a string, and sends it back as a number', async () => {
+    const sessionPath = await sessionFile(SIGNED_IN)
+    const points = stubPoints()
+    const { fetchImpl, calls } = recordingFetch({
+      pending: () => new Response(JSON.stringify(envelope([
+        { popupId: '91234', componentType: 'DAILY_REWARD_DIALOG', instanceKey: 'instance-1', payload: { points: '100' } },
+      ]))),
+      complete: () => new Response(JSON.stringify(envelope(null))),
+    })
+
+    const result = await createAStudioDailyRewardClient({
+      credentials: () => claimCredentialsAt(sessionPath),
+      points: points.client,
+      fetchImpl,
+      clientType: '21',
+    }).claim()
+
+    expect(result).toEqual({ status: 'claimed', points: 100, balance: BALANCE })
+    // `client-popups/complete` is parsed with Number.isSafeInteger upstream, so
+    // the id has to travel as a number even when it arrived quoted.
+    expect(JSON.parse(String(calls[1]!.init?.body))).toEqual({ popupId: 91234, instanceKey: 'instance-1' })
+  })
+
+  it('ignores ids the completion endpoint would reject, such as a dev preview', async () => {
+    const sessionPath = await sessionFile(SIGNED_IN)
+    const points = stubPoints()
+    const { fetchImpl, calls } = recordingFetch({
+      pending: () => new Response(JSON.stringify(envelope([
+        { popupId: -3, componentType: 'DAILY_REWARD_DIALOG', instanceKey: 'DEV_PREVIEW', payload: { points: '100' } },
+        { popupId: 0, componentType: 'DAILY_REWARD_DIALOG', instanceKey: 'instance-0', payload: {} },
+        { popupId: 'not-a-number', componentType: 'DAILY_REWARD_DIALOG', instanceKey: 'instance-x', payload: {} },
+        { componentType: 'DAILY_REWARD_DIALOG', instanceKey: 'instance-y', payload: {} },
+      ]))),
+    })
+
+    const result = await createAStudioDailyRewardClient({
+      credentials: () => claimCredentialsAt(sessionPath),
+      points: points.client,
+      fetchImpl,
+      clientType: '21',
+    }).claim()
+
+    // Posting a popup the endpoint cannot parse would fail the whole claim, so
+    // an unusable id is skipped and the press ends as "nothing pending".
+    expect(result).toEqual({ status: 'none' })
+    expect(calls).toHaveLength(1)
   })
 
   it('never carries the session cookie into its answer', async () => {
@@ -311,7 +425,7 @@ describe('createAStudioDailyRewardClient', () => {
     })
 
     const result = await createAStudioDailyRewardClient({
-      sessionId: () => readSsoSessionId(sessionPath),
+      credentials: () => claimCredentialsAt(sessionPath),
       points: points.client,
       fetchImpl,
       clientType: '21',

@@ -128,7 +128,7 @@ describe('the claim route', () => {
   })
 
   it('answers every unbooked state as a well-formed document', async () => {
-    for (const state of ['none', 'signed-out', 'expired', 'unavailable'] as const) {
+    for (const state of ['already', 'none', 'signed-out', 'expired', 'unavailable'] as const) {
       const port = await startServer(stubClient({ status: state }))
       const { status, body } = await requestOnce(port, { headers: browserHeaders(port) })
       // A named state, not an error status: the badge renders what happened.

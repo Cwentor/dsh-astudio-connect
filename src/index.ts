@@ -296,7 +296,7 @@ function registerAStudioWebRoutes(
   // that changes account state — hence the control key.
   registerAStudioClaimRoute(ctx, {
     client: createAStudioDailyRewardClient({
-      sessionId: () => store.ssoSessionId(),
+      credentials: () => store.claimCredentials(),
       points: pointsClient,
     }),
   }, controlKey)

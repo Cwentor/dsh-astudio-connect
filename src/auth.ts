@@ -22,6 +22,7 @@ import {
   readStorageRegistry,
   resolveAstudioHome,
 } from './locations.ts'
+import type { AStudioDailyRewardCredentials } from './daily-reward.ts'
 import type { AStudioLoginSession } from './login-session.ts'
 import { astudioLoginSessionPath, clearLoginSession, describeLoginSession, readLoginSession } from './login-session.ts'
 import type { AStudioWebLogin } from './status-paths.ts'
@@ -243,6 +244,31 @@ export function createAStudioAuth(options: AStudioAuthOptions = {}) {
   /** The chat token in use: our own sign-in wins over the app's. */
   const resolvedToken = (): AStudioCredential => own()?.modelBearerToken ?? clientToken()
 
+  /**
+   * The cookie parts the account APIs authenticate with.
+   *
+   * The desktop client sends all four cookies (`ssoSessionId`, `sso_sessionid`,
+   * `account_id`, `token`) on every account call, and the reward endpoints are
+   * the ones that care about the extra two: `pending` is written against an
+   * identified account, not just a session. `token` is missing for a sign-in
+   * this plugin made itself — the QR exchange returns a model key, not an
+   * account token — so it is omitted rather than faked.
+   */
+  const claimCredentials = (): AStudioDailyRewardCredentials | undefined => {
+    const session = own()
+    if (session !== undefined) {
+      return { ssoSessionId: session.ssoSessionId, accountId: session.accountId }
+    }
+    const ssoSessionId = readClientSsoSessionId(sessionPath())
+    if (ssoSessionId === undefined) return undefined
+    const accountId = readSessionField(sessionPath(), 'accountId')
+    const token = readSessionField(sessionPath(), 'token')
+    return {
+      ssoSessionId,
+      ...(accountId === undefined ? {} : { accountId }),
+      ...(token === undefined ? {} : { token }),
+    }
+  }
   /** The model key in use, with the same precedence. */
   const resolvedModelToken = (): AStudioCredential => own()?.modelBearerToken ?? clientModelToken()
 
@@ -262,6 +288,16 @@ export function createAStudioAuth(options: AStudioAuthOptions = {}) {
      */
     ssoSessionId(): AStudioCredential {
       return own()?.ssoSessionId ?? readClientSsoSessionId(sessionPath())
+    },
+    /**
+     * The same credential, in the shape the claim's cookie needs.
+     *
+     * Separate from {@link ssoSessionId} because the reward endpoints want the
+     * account identified by cookie rather than by session alone, and only this
+     * module knows where the account id and token live.
+     */
+    claimCredentials(): AStudioDailyRewardCredentials | undefined {
+      return claimCredentials()
     },
     /**
      * The `astron-session.json` this store reads the app's credentials from.

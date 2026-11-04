@@ -274,4 +274,27 @@ describe('the plugin\'s own sign-in', () => {
     expect(status.source).toBe('dsh')
     expect(JSON.stringify(status)).not.toContain('token-own')
   })
+
+  it('hands the claim the four cookie parts the desktop client sends', () => {
+    writeClientSession({ ssoSessionId: 'sso-app', accountId: 'acc-app', token: 'acc-token' })
+    // The claim works against an account, not just a session: the popup service
+    // answers an unidentified caller with an empty list.
+    expect(store().claimCredentials()).toEqual({
+      ssoSessionId: 'sso-app',
+      accountId: 'acc-app',
+      token: 'acc-token',
+    })
+  })
+
+  it('prefers our own sign-in for the claim, and omits the token it never got', () => {
+    writeClientSession({ ssoSessionId: 'sso-app', accountId: 'acc-app', token: 'acc-token' })
+    ownSession()
+    // A QR exchange yields a model key, not an account token; sending the app's
+    // token would attribute our claim to a credential from another sign-in.
+    expect(store().claimCredentials()).toEqual({ ssoSessionId: 'sso-own', accountId: 'acc-own' })
+  })
+
+  it('reports no claim credentials when nobody is signed in', () => {
+    expect(store().claimCredentials()).toBeUndefined()
+  })
 })

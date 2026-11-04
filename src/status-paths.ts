@@ -257,7 +257,13 @@ export type AStudioWebPoints =
  */
 export type AStudioWebClaim =
   | { status: 'claimed', points?: number, balance: AStudioWebPoints }
-  /** Signed in, but the account service has no reward pending for today. */
+  /**
+   * Upstream answered `11003002` for every popup found: today's reward was
+   * booked before this press. The one state that proves a claim already
+   * happened, as opposed to merely finding nothing.
+   */
+  | { status: 'already' }
+  /** Signed in, but the account service is holding no reward for today. */
   | { status: 'none' }
   | { status: 'signed-out' }
   | { status: 'expired' }

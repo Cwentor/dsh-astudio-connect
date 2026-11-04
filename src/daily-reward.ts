@@ -21,6 +21,13 @@
  * could not be made is `unavailable`, never a silent success: the section tells
  * the user what happened, and only `claimed` adds credit to the display.
  *
+ * `none` and `already` are kept apart on purpose. `already` is upstream saying
+ * `11003002` — proof that this popup was booked before the press. `none` only
+ * says the service is holding no reward right now, which is also what an
+ * identified-account problem or a not-yet-issued reward looks like; calling
+ * that "already claimed" is how the section once told users they had collected
+ * a reward they had not.
+ *
  * @module dsh-astudio-connect/daily-reward
  */
 
@@ -68,12 +75,13 @@ export function astudioClientType(platform: NodeJS.Platform = process.platform):
 /** Options for {@link createAStudioDailyRewardClient}. */
 export interface AStudioDailyRewardClientOptions {
   /**
-   * The account cookie, or undefined when nobody is signed in.
+   * The account this claim is made against, or undefined when nobody is signed in.
    *
-   * A provider, so the cookie can come from the AStudio app's session file or
-   * from a sign-in this plugin made itself.
+   * A provider, so the credential can come from the AStudio app's session file
+   * or from a sign-in this plugin made itself — and so a re-login between two
+   * presses is picked up instead of pinning the first session.
    */
-  sessionId: () => string | undefined
+  credentials: () => AStudioDailyRewardCredentials | undefined
   /** Balance client used to report the post-claim balance. */
   points: AStudioPointsClient
   /** Injected for tests. */
@@ -84,6 +92,21 @@ export interface AStudioDailyRewardClientOptions {
   studioVersion?: string
   /** Per-call timeout. */
   timeoutMs?: number
+}
+
+/**
+ * The cookie parts the account APIs authenticate with.
+ *
+ * Mirrors what the desktop client sends: `ssoSessionId` and `sso_sessionid`
+ * are the same value under both names, and `account_id`/`token` are what make
+ * the request *account-scoped* rather than merely session-scoped. `token` is
+ * absent for a QR sign-in this plugin made itself — that exchange returns a
+ * model key, not an account token — and is then left out rather than guessed.
+ */
+export interface AStudioDailyRewardCredentials {
+  ssoSessionId: string
+  accountId?: string
+  token?: string
 }
 
 /** What the plugin and the claim route consume. */
@@ -104,10 +127,25 @@ type GatewayAnswer =
 
 /** One claimable daily reward, as the pending list describes it. */
 interface PendingReward {
-  popupId: string
+  /** A positive integer, not a string — the completion endpoint takes a number. */
+  popupId: number
   instanceKey: string
   /** Announced amount; `undefined` when the payload carries none this module can read. */
   points: number | undefined
+}
+
+/**
+ * Read a popup id the way the desktop client does.
+ *
+ * The id is a positive integer on the wire, and `client-popups/complete` is
+ * parsed with `Number.isSafeInteger` upstream. Accepting only strings here is
+ * what once made every real reward look like "nothing pending": the popup was
+ * delivered, failed this test, and the section announced a reward that had
+ * never been booked.
+ */
+function popupIdOf(value: unknown): number | undefined {
+  const id = typeof value === 'number' ? value : typeof value === 'string' ? Number(value) : NaN
+  return Number.isSafeInteger(id) && id > 0 ? id : undefined
 }
 
 /**
@@ -150,13 +188,31 @@ function pendingRewards(data: unknown): PendingReward[] {
     if (typeof raw !== 'object' || raw === null) continue
     const item = raw as Record<string, unknown>
     if (item['componentType'] !== ASTRO_DAILY_REWARD_COMPONENT) continue
-    const popupId = item['popupId']
+    const popupId = popupIdOf(item['popupId'])
     const instanceKey = item['instanceKey']
-    if (typeof popupId !== 'string' || popupId === '') continue
+    if (popupId === undefined) continue
     if (typeof instanceKey !== 'string' || instanceKey === '') continue
     rewards.push({ popupId, instanceKey, points: announcedPoints(item['payload']) })
   }
   return rewards
+}
+
+/**
+ * Build the cookie header the account APIs expect.
+ *
+ * Same four pairs the desktop client sends, in the same order. The claim is not
+ * an anonymous "is there a reward?" question — the popup service answers an
+ * unidentified caller with an empty list, which is indistinguishable from "no
+ * reward today" unless the account travels with the request.
+ */
+function claimCookie(credentials: AStudioDailyRewardCredentials): string {
+  const parts = [
+    `ssoSessionId=${credentials.ssoSessionId}`,
+    `sso_sessionid=${credentials.ssoSessionId}`,
+  ]
+  if (credentials.accountId !== undefined) parts.push(`account_id=${credentials.accountId}`)
+  if (credentials.token !== undefined) parts.push(`token=${credentials.token}`)
+  return parts.join('; ')
 }
 
 /**
@@ -172,16 +228,16 @@ export function createAStudioDailyRewardClient(options: AStudioDailyRewardClient
   const studioVersion = options.studioVersion ?? ASTRO_STUDIO_VERSION
   const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS
 
-  const call = async (sessionId: string, path: string, init: RequestInit = {}): Promise<GatewayAnswer> => {
+  const call = async (credentials: AStudioDailyRewardCredentials, path: string, init: RequestInit = {}): Promise<GatewayAnswer> => {
     let response: Response
     try {
       response = await fetchImpl(new URL(path, ASTRO_STUDIO_API_BASE), {
         ...init,
         headers: {
           Accept: 'application/json',
-          // Only the session cookie travels; the chat and model-manager tokens
+          // Only the account cookies travel; the chat and model-manager tokens
           // in the same file never leave the process.
-          Cookie: `ssoSessionId=${sessionId}`,
+          Cookie: claimCookie(credentials),
           ...(clientType === undefined ? {} : { clientType }),
           studioVersion,
           ...(init.headers ?? {}),
@@ -204,31 +260,37 @@ export function createAStudioDailyRewardClient(options: AStudioDailyRewardClient
 
   return {
     async claim(): Promise<AStudioWebClaim> {
-      const sessionId = options.sessionId()
-      if (sessionId === undefined) return { status: 'signed-out' }
+      const credentials = options.credentials()
+      if (credentials === undefined) return { status: 'signed-out' }
       // A platform AStudio does not ship on cannot pass the gateway's identity
       // check, so there is nothing to send.
       if (clientType === undefined) return { status: 'unavailable' }
 
-      const pending = await call(sessionId, ASTRO_DAILY_REWARD_PENDING_PATH)
+      const pending = await call(credentials, ASTRO_DAILY_REWARD_PENDING_PATH)
       if (pending.kind === 'expired') return { status: 'expired' }
       if (pending.kind !== 'ok') return { status: 'unavailable' }
       const rewards = pendingRewards(pending.data)
       if (rewards.length === 0) return { status: 'none' }
 
       let booked = 0
+      let alreadyBooked = 0
       let bookedAmount: number | undefined
       for (const reward of rewards) {
-        const answer = await call(sessionId, ASTRO_DAILY_REWARD_COMPLETE_PATH, {
+        const answer = await call(credentials, ASTRO_DAILY_REWARD_COMPLETE_PATH, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ popupId: reward.popupId, instanceKey: reward.instanceKey }),
         })
         if (answer.kind === 'expired') return { status: 'expired' }
-        // `already` means the popup was booked before this call: not a failure,
-        // and not a second reward either. Counted as claimed so the section says
-        // "you have today's credit" rather than "nothing to claim".
-        if (answer.kind === 'ok' || answer.kind === 'already') {
+        // `already` means this popup was booked before this press — by AStudio,
+        // or by an earlier press. It is not a second reward, so it does not get
+        // counted as one: reporting `+100` for a booking we did not make is
+        // exactly the claim the section must not fabricate.
+        if (answer.kind === 'already') {
+          alreadyBooked += 1
+          continue
+        }
+        if (answer.kind === 'ok') {
           booked += 1
           if (reward.points !== undefined) bookedAmount = (bookedAmount ?? 0) + reward.points
           continue
@@ -237,6 +299,10 @@ export function createAStudioDailyRewardClient(options: AStudioDailyRewardClient
         if (booked === 0) return { status: 'unavailable' }
         break
       }
+
+      // Every popup was refused as already completed: the reward is real and it
+      // is not ours to book again.
+      if (booked === 0) return { status: alreadyBooked > 0 ? 'already' : 'none' }
 
       // The balance is read fresh through the section's own client, so the number
       // on screen is in the same vocabulary as every other read. A failed read

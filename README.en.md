@@ -214,11 +214,18 @@ One press is two requests: read the pending list, then report completion. The ba
 | Outcome | Display |
 |---|---|
 | Claimed | Balance updates in place, `+100` appears in green beside the button and fades after 6 seconds |
-| Already claimed today / nothing pending yet | "Already claimed today"; the balance does not move |
+| Upstream answered `11003002` — booked before this press | "Already claimed today"; the balance does not move |
+| The pending list holds no reward | "Nothing to claim right now"; the balance does not move |
 | Sign-in expired (`code: 80000`, or 401/403) | Numbers cleared, "Sign-in expired" |
 | Upstream error / no `clientType` for this platform | "Unavailable" |
 
+The third row is deliberately not worded as "already claimed": the two are not the same state. `11003002` is upstream *saying* the popup was booked; an empty list only says the service is holding no reward at this moment — it may not have been issued yet, or the account may not have travelled with the request. Calling that "already claimed" tells someone to stop pressing a button that would still have worked, which is exactly what an earlier version did.
+
 Two identity headers are mandatory (without either, the gateway answers `11001001`): `clientType` (`21` on Windows, `22` on macOS) and `studioVersion`. The latter is only shape-checked, which is why the plugin sends a constant instead of reading the installed app's version — and why this works with AStudio uninstalled.
+
+One more detail `pending` will not forgive: `popupId` is a **positive integer**, and `complete` is parsed with `Number.isSafeInteger` upstream — a string makes the desktop client treat the whole popup config as invalid. The plugin used to read it as a string, which filtered out every reward the service sent while still reporting "already claimed", leaving the reward sitting there for the client to book. It now parses ids the way the client does and skips anything non-positive (the `-3` a preview uses, for instance).
+
+These endpoints are also scoped to the **account**, not just the session: the desktop client sends `ssoSessionId`, `sso_sessionid`, `account_id` and `token` on every account call. The plugin now sends all four, where it used to send only the session.
 
 > This is the plugin's **only** route that changes account state (`POST /astudio/claim`). It writes no local file, and it never touches other popup kinds in the pending list (announcements, feature tours): completing a popup it does not understand would mean deciding something on the user's behalf without knowing what.
 

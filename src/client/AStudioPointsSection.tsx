@@ -185,7 +185,15 @@ export function AStudioPointsSection({ t }: AStudioPointsSectionProps): ReactEle
         if (result.status === 'expired') setNotice({ ok: false, text: t('pointsExpired') })
         return
       }
+      if (result.status === 'already') {
+        setNotice({ ok: false, text: t('claimAlready') })
+        return
+      }
       if (result.status === 'none') {
+        // Not "already claimed": all this state proves is that the account
+        // service is holding no reward for today. Saying more would be a guess,
+        // and the client showing a claim button is exactly how that guess goes
+        // wrong.
         setNotice({ ok: false, text: t('claimNone') })
         return
       }

@@ -39,7 +39,8 @@ export function isPointsDocument(value: unknown): value is AStudioWebPoints {
 export function isClaimDocument(value: unknown): value is AStudioWebClaim {
   if (typeof value !== 'object' || value === null || Array.isArray(value)) return false
   const status = (value as Record<string, unknown>)['status']
-  return status === 'claimed' || status === 'none' || status === 'signed-out' || status === 'expired' || status === 'unavailable'
+  return status === 'claimed' || status === 'already' || status === 'none'
+    || status === 'signed-out' || status === 'expired' || status === 'unavailable'
 }
 
 /** Narrow an unknown JSON value to the QR start route's document. */

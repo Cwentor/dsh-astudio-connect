@@ -203,14 +203,29 @@ describe('AStudioPointsSection', () => {
     expect((claim.init?.headers as Record<string, string>)[ASTRO_CONTROL_KEY_HEADER]).toBe('k'.repeat(48))
   })
 
-  it('says so when today already held a reward, leaving the numbers alone', async () => {
+  it('says a reward was already booked only when upstream says so', async () => {
+    routedFetch({ status: 'already' })
+    const renderer = await render()
+
+    await press(renderer, en.claimPointsHint)
+
+    const rendered = text(renderer)
+    expect(rendered).toContain(en.claimAlready)
+    expect(rendered).not.toContain('+100')
+  })
+
+  it('does not call an empty pending list "already claimed"', async () => {
     routedFetch({ status: 'none' })
     const renderer = await render()
 
     await press(renderer, en.claimPointsHint)
 
     const rendered = text(renderer)
+    // `none` only proves the service is holding no reward right now. Claiming
+    // any more than that is how the section told users they had collected a
+    // reward that was still sitting there in the client.
     expect(rendered).toContain(en.claimNone)
+    expect(rendered).not.toContain(en.claimAlready)
     expect(rendered).toContain('1393')
     expect(rendered).not.toContain('+100')
   })
@@ -317,6 +332,8 @@ describe('points-client documents', () => {
   it('accepts the route documents it serves', () => {
     expect(isPointsDocument({ status: 'ok', general: { remaining: 1 } })).toBe(true)
     expect(isClaimDocument({ status: 'claimed', balance: { status: 'ok', general: { remaining: 1 } } })).toBe(true)
+    expect(isClaimDocument({ status: 'already' })).toBe(true)
+    expect(isClaimDocument({ status: 'none' })).toBe(true)
   })
 
   it('rejects anything else, including an unknown status', () => {
