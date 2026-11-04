@@ -283,6 +283,7 @@ Five write routes (probing, visibility, claim, and the two sign-in routes) requi
 
 | Plugin version | DSH kernel range it supports |
 |---|---|
+| `0.2.1` | `^0.2.1-rc.2` (from `0.2.1-rc.2`, below `0.3.0`) |
 | `0.2.0` | `^0.2.1-rc.2` (from `0.2.1-rc.2`, below `0.3.0`) |
 | `0.1.1` | `^0.2.1-rc.2` (from `0.2.1-rc.2`, below `0.3.0`) |
 | `0.1.0` | `0.2.0-rc.2` (exact) |
@@ -290,6 +291,8 @@ Five write routes (probing, visibility, claim, and the two sign-in routes) requi
 The plugin declares a kernel range in `peerDependencies`; the host's `evaluatePluginCompatibility` checks it with semver and refuses to load the plugin when the range is unmet. `0.1.0` pinned an exact version, so every kernel rc needed a matching plugin release; from `0.1.1` the requirement is `^0.2.1-rc.2`, which covers every prerelease and the final release of the `0.2.1` line (`rc.3`, `rc.4`, `rc.5` all load as-is), and only a move to `0.3.x` requires a new plugin version. `0.1.0` shipped against `0.2.0-rc.2`, which was the real-machine environment; on the `0.1.1` line provider registration, the settings card and the points section are covered by local unit and integration tests, and the exact desktop build number still needs re-confirming on the new kernel.
 
 `0.2.0` carries the same kernel range as `0.1.1` and adds nothing but features: the points section in Settings (balance and the daily claim) and WeChat QR sign-in. One thing to know before upgrading — **from `0.2.0` the plugin writes a credential file to disk**. That is unavoidable for QR sign-in: without the app, somebody has to hold the session. It lives at `$DSH_HOME/.astudio-login.json`, mode `0600`, created only when you scan a code and deleted when you sign out. If you want the old behaviour — read the app's credentials and write nothing at all — stay on `0.1.1`.
+
+`0.2.1` is a fix-only release with an unchanged kernel range. **If you are on `0.2.0`, upgrade: its Claim button never actually claimed anything.** Pending popups carry `popupId` as a positive integer, but the plugin read it as a string, so every real reward was filtered out locally, the UI always said "already claimed today", and the reward sat untouched on the server — opening AStudio still claimed it. `0.2.1` parses the id the way the app does, separates "no pending reward" from an explicit `11003002` answer, and sends the four account-scoped cookies the claim endpoints expect.
 
 ## When the upstream refuses a request
 
