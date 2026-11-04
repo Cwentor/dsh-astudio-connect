@@ -45,13 +45,21 @@ export const ASTRO_DAILY_REWARD_COMPLETE_PATH = 'client-popups/complete'
 export const ASTRO_DAILY_REWARD_COMPONENT = 'DAILY_REWARD_DIALOG'
 
 /**
- * Build label sent as `studioVersion`.
+ * Build label sent as `studioVersion` and `clientVersion`.
  *
- * Upstream only checks its shape (a real client sends `3.5.5`), so this repeats
- * the current AStudio line instead of reading the installed app's version — the
- * claim has to work with AStudio uninstalled.
+ * The desktop app derives both from `electron.app.getVersion()` (`3.6.0` for
+ * the installed build) and injects `clientVersion` on every request to an
+ * xfyun domain through `fetchWithClientVersion`. Upstream only checks the
+ * shape of `studioVersion`, but we send both anyway: a request from this
+ * plugin should be indistinguishable from one made by the app, and we cannot
+ * rule out that the gateway uses the extra header when deciding which popups
+ * to hand out.
+ *
+ * Hard-coded rather than read from the installed app, because claiming has to
+ * work with AStudio uninstalled. Bump when a new client line ships.
  */
-export const ASTRO_STUDIO_VERSION = '3.5.5'
+export const ASTRO_STUDIO_VERSION = '3.6.0'
+export const ASTRO_CLIENT_VERSION = '3.6.0'
 
 /** Account-gateway codes this module distinguishes. */
 const CODE_SESSION_INVALID = 80000
@@ -90,6 +98,8 @@ export interface AStudioDailyRewardClientOptions {
   clientType?: string | undefined
   /** Overrides {@link ASTRO_STUDIO_VERSION}. */
   studioVersion?: string
+  /** Overrides {@link ASTRO_CLIENT_VERSION}. */
+  clientVersion?: string
   /** Per-call timeout. */
   timeoutMs?: number
 }
@@ -226,6 +236,7 @@ export function createAStudioDailyRewardClient(options: AStudioDailyRewardClient
   const fetchImpl = options.fetchImpl ?? fetch
   const clientType = 'clientType' in options ? options.clientType : astudioClientType()
   const studioVersion = options.studioVersion ?? ASTRO_STUDIO_VERSION
+  const clientVersion = options.clientVersion ?? ASTRO_CLIENT_VERSION
   const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS
 
   const call = async (credentials: AStudioDailyRewardCredentials, path: string, init: RequestInit = {}): Promise<GatewayAnswer> => {
@@ -240,6 +251,7 @@ export function createAStudioDailyRewardClient(options: AStudioDailyRewardClient
           Cookie: claimCookie(credentials),
           ...(clientType === undefined ? {} : { clientType }),
           studioVersion,
+          clientVersion,
           ...(init.headers ?? {}),
         },
         signal: AbortSignal.timeout(timeoutMs),

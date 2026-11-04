@@ -8,6 +8,7 @@ import {
   createAStudioDailyRewardClient,
   ASTRO_DAILY_REWARD_COMPLETE_PATH,
   ASTRO_DAILY_REWARD_PENDING_PATH,
+  ASTRO_CLIENT_VERSION,
   ASTRO_STUDIO_VERSION,
 } from '../src/daily-reward.ts'
 import type { AStudioDailyRewardCredentials } from '../src/daily-reward.ts'
@@ -133,9 +134,12 @@ function recordingFetch(routes: Record<string, () => Response>): {
 function assertCall(call: { url: string, init: RequestInit | undefined }, path: string): void {
   expect(call.url).toContain(path)
   const headers = call.init?.headers as Record<string, string>
-  // The gateway answers 11001001 without both identity headers.
+  // The gateway answers 11001001 without both identity headers. `clientVersion`
+  // is a third header the desktop app adds to every xfyun request; sending it
+  // keeps this request indistinguishable from one made by the app.
   expect(headers['clientType']).toBe('21')
   expect(headers['studioVersion']).toBe(ASTRO_STUDIO_VERSION)
+  expect(headers['clientVersion']).toBe(ASTRO_CLIENT_VERSION)
   // The four cookie pairs the desktop client sends. `account_id` and `token`
   // are what make the request account-scoped: without them the popup service
   // answers an empty list, which is indistinguishable from "no reward today".
