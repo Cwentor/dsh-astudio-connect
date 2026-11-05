@@ -10,8 +10,15 @@
 /** Package name reported by the update route. */
 export const ASTRO_PACKAGE_NAME = 'dsh-astudio-connect'
 
-/** Current package version. */
-export const ASTRO_VERSION = '0.1.0'
+/**
+ * Current package version.
+ *
+ * Kept in step with `package.json` by hand — the release commit is what bumps
+ * both. It drifted to `0.1.0` for three releases while the packages shipped as
+ * `0.2.0`–`0.2.2`, which made the update route and the heartbeat advertise a
+ * version that no longer existed.
+ */
+export const ASTRO_VERSION = '0.2.3'
 
 /**
  * Repository URL reported by the update route.

@@ -302,6 +302,7 @@ Five write routes (probing, visibility, claim, and the two sign-in routes) requi
 
 | Plugin version | DSH kernel range it supports |
 |---|---|
+| `0.2.3` | `^0.2.1-rc.2` (from `0.2.1-rc.2`, below `0.3.0`) |
 | `0.2.2` | `^0.2.1-rc.2` (from `0.2.1-rc.2`, below `0.3.0`) |
 | `0.2.1` | `^0.2.1-rc.2` (from `0.2.1-rc.2`, below `0.3.0`) |
 | `0.2.0` | `^0.2.1-rc.2` (from `0.2.1-rc.2`, below `0.3.0`) |
@@ -315,6 +316,8 @@ The plugin declares a kernel range in `peerDependencies`; the host's `evaluatePl
 `0.2.1` is a fix-only release with an unchanged kernel range. **If you are on `0.2.0`, upgrade: its Claim button never actually claimed anything.** Pending popups carry `popupId` as a positive integer, but the plugin read it as a string, so every real reward was filtered out locally, the UI always said "already claimed today", and the reward sat untouched on the server — opening AStudio still claimed it. `0.2.1` parses the id the way the app does, separates "no pending reward" from an explicit `11003002` answer, and sends the four account-scoped cookies the claim endpoints expect.
 
 `0.2.2` only aligns the request headers, and **does not fix the "claimable only while the client is running" symptom**. Two changes: a new `clientVersion` header (constant `3.6.0`), and `studioVersion` moving from `3.5.5` to `3.6.0` — the desktop app's `fetchWithClientVersion` adds the former to every xfyun request and the plugin never sent it at all. An A/B run before and after this release showed the header is not the cause (see [Known limitations](#known-limitations)), so what this version actually delivers is making a plugin request indistinguishable from the app's, plus writing the real constraint into the docs: the daily reward is only issued after the desktop app has started. Any release note claiming this version fixed claiming is wrong.
+
+`0.2.3` fixes the actual root cause — **this is the release that makes claiming work without the client** — with an unchanged kernel range. What was missing was not a header (the `0.2.2` guess, already disproved by an A/B run) but a call: the desktop app sends `POST tenant-app/v2/init-app` on every launch, and the account service credits the day's login reward **while answering it**. Without that call, `client-popups/pending` stays empty all day. Measured on `2026-11-05` with the app not running, from a balance of 7793: 0 dialogs before, 7893 and one dialog after, no further credit when the call is repeated, and the balance unchanged across `complete` — so the popup is a notification and `complete` only dismisses it. Claim now runs read balance → init-app → read dialogs → close them → read balance, taking the amount from the difference (current clients send no figure in `payload` at all). It also fixes something outside the docs: `ASTRO_VERSION` had not moved since `0.1.0`, so the update check and the heartbeat kept advertising a version that no longer existed; it now matches `package.json`, with an assertion keeping the two from drifting apart again.
 
 ## When the upstream refuses a request
 

@@ -1,6 +1,7 @@
+import { readFileSync } from 'node:fs'
 import { describe, expect, it, vi } from 'vitest'
 import type { AStudioUpdateFetch } from '../src/update.ts'
-import { ASTRO_REPOSITORY_URL } from '../src/version.ts'
+import { ASTRO_REPOSITORY_URL, ASTRO_VERSION } from '../src/version.ts'
 import {
   checkAStudioUpdate,
   compareAStudioVersions,
@@ -51,6 +52,18 @@ describe('the declared repository', () => {
       'https://api.github.com/repos/Cwentor/dsh-astudio-connect/releases?per_page=100',
     )
     expect(releasePageUrl('0.6.4')).toBe('https://github.com/Cwentor/dsh-astudio-connect/releases/tag/v0.6.4')
+  })
+})
+
+describe('the advertised version', () => {
+  it('matches the version package.json publishes', () => {
+    // Regression: ASTRO_VERSION sat at 0.1.0 while 0.2.0–0.2.2 shipped, so the
+    // update route and the heartbeat advertised a version that no longer
+    // existed. Two fields carry one fact; this is what keeps them in step.
+    const manifest = JSON.parse(
+      readFileSync(new URL('../package.json', import.meta.url), 'utf8'),
+    ) as { version: string }
+    expect(ASTRO_VERSION).toBe(manifest.version)
   })
 })
 
