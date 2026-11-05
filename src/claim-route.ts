@@ -15,10 +15,11 @@
  *    local process can write `Host: 127.0.0.1`), so the caller has to prove it
  *    was handed the key that ships inside the same-origin status document.
  *
- * Idempotency is the upstream's: completing a popup twice answers `11003002`,
- * which {@link AStudioDailyRewardClient} reads as "already claimed". A wrong
- * press therefore cannot mint credit, which is why this route needs no lock of
- * its own — two simultaneous presses both end up at one booking.
+ * Idempotency is the upstream's: repeating the tenant-app initialisation on the
+ * same day issues nothing further, and completing a popup twice still answers
+ * success. A wrong press therefore cannot mint credit, which is why this route
+ * needs no lock of its own — two simultaneous presses both end up at one
+ * settlement.
  *
  * @module dsh-astudio-connect/claim-route
  */

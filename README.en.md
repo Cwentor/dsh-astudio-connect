@@ -205,23 +205,40 @@ Precedence is **our own sign-in over AStudio's files**. The reasoning is plain: 
 
 ### Daily login reward
 
-The same card ends with a **Claim** button, which books AStudio's daily login reward (100 on trial, 200 on basic, 400 on Pro/Enjoy) **without opening AStudio**.
+The same card ends with a **Claim** button, which books AStudio's daily login reward (100 on trial, 200 on basic, 400 on Pro/Enjoy) **without opening the AStudio client — or even installing it**.
 
-It is not really a check-in. AStudio delivers the reward as a popup: `client-popups/pending` answers one `DAILY_REWARD_DIALOG` carrying `popupId`, `instanceKey` and the amount, and `client-popups/complete` books it. The desktop client fires that completion **itself** the moment the dialog arrives — the button in its UI is decoration — so "today's points landed" really means "AStudio was opened today". This button just makes the days it was not opened count too.
+It looks like a check-in, but it is three steps, the same ones the desktop app performs when it starts:
 
-One press is two requests: read the pending list, then report completion. The balance the answer carries is then shown directly, so the press does not trigger a second read. Upstream is idempotent (a repeated completion answers `11003002`, read as "already claimed"), so extra presses cannot mint credit and a mistake cannot drain the account.
+1. `POST tenant-app/v2/init-app` — the app calls this on every launch, and the account service credits the day's login reward **while answering it**.
+2. `GET client-popups/pending` — fetch the `DAILY_REWARD_DIALOG` (`popupId` + `instanceKey`).
+3. `POST client-popups/complete` — dismiss the dialog.
+
+The first step is the whole story. `pending` on its own mints nothing: without `init-app` the service does not consider a client to have come online that day, and the list stays empty forever — which is exactly why versions up to `0.2.2` could only claim on days the app had been opened.
+
+Measured on `2026-11-05`, AStudio not running, starting from a balance of 7793:
+
+| Step | Balance | Daily dialogs in `pending` |
+|---|---|---|
+| Baseline | 7793 | 0 |
+| `POST tenant-app/v2/init-app` | **7893** | **1** |
+| Two more `init-app` calls | 7893 | 1 |
+| `POST client-popups/complete` | 7893 | 0 |
+
+The 100 lands during `init-app`; the balance does not budge when the dialog is closed — **the popup is a notification, not the receipt**. The desktop app appears to "claim on click" only because it has already completed the dialog itself before rendering it; the button in its UI is decoration.
+
+The amount does not come from the dialog either: current clients send only `title` / `content` / `confirmText` in `payload`, with no figure at all (older documentation here recorded `payload.points`, which was an older build's shape). The plugin instead reads the balance before and after `init-app` and reports the difference; when neither read succeeds it shows "Claimed" without a figure.
+
+Idempotence is upstream's: repeating `init-app` the same day adds nothing, and a repeated `complete` still answers successfully, so extra presses cannot mint credit.
 
 | Outcome | Display |
 |---|---|
-| Claimed | Balance updates in place, `+100` appears in green beside the button and fades after 6 seconds |
-| Upstream answered `11003002` — booked before this press | "Already claimed today"; the balance does not move |
-| The pending list holds no reward | "Nothing to claim right now"; the balance does not move |
+| Balance rose | Updates in place, `+100` in green beside the button, fades after 6 seconds |
+| A dialog was closed but the balance did not move (credited earlier today) | "Already claimed today"; the balance does not move |
+| `init-app` succeeded, no dialog, no credit | "Nothing new was credited — today's reward may already be on this account, or your plan may not include one" |
 | Sign-in expired (`code: 80000`, or 401/403) | Numbers cleared, "Sign-in expired" |
 | Upstream error / no `clientType` for this platform | "Unavailable" |
 
-The third row is deliberately not worded as "already claimed": the two are not the same state. `11003002` is upstream *saying* the popup was booked; an empty list only says the service is holding no reward at this moment — it may not have been issued yet, or the account may not have travelled with the request. Calling that "already claimed" tells someone to stop pressing a button that would still have worked, which is exactly what an earlier version did.
-
-"Not issued yet" is the common case, not the corner one: **the daily popup is only attached to the account once the desktop app starts.** Measured on `2026-11-05` with AStudio not running, every header combination polled `client-popups/pending` and got an empty list with the balance unchanged (7793); replaying the read-only endpoints the app hits on startup (`membership/me`, `points/summary`, `bot/models/configs`) changed nothing either. Starting the app the same day added 100 straight away. So the plugin can claim, but only on days you have already opened AStudio — otherwise there is no popup and the button truthfully reports "Nothing to claim right now". The headers are not the cause: adding `clientVersion` made no difference in an A/B run.
+"Already claimed today" is used in exactly one situation: a dialog existed, it was closed, and the balance did not move — proof the credit was on the account before the press (typically a client that received the banner and quit before dismissing it). The reverse case — `init-app` succeeded, the list was empty, the balance did not move — means the service settled the day without issuing anything, and calling that "already claimed" would be a guess. That row says "nothing new was credited" instead.
 
 `clientType` (`21` on Windows, `22` on macOS) and `studioVersion` are mandatory (without either, the gateway answers `11001001`). The desktop app also adds `clientVersion` to every request bound for an xfyun domain — both come from `electron.app.getVersion()`, currently `3.6.0` — and the plugin sends all three so its requests match the app's. The version is only shape-checked, which is why a constant works instead of reading the installed app's version, and why this works with AStudio uninstalled.
 
@@ -229,7 +246,7 @@ One more detail `pending` will not forgive: `popupId` is a **positive integer**,
 
 These endpoints are also scoped to the **account**, not just the session: the desktop client sends `ssoSessionId`, `sso_sessionid`, `account_id` and `token` on every account call. The plugin now sends all four, where it used to send only the session.
 
-> This is the plugin's **only** route that changes account state (`POST /astudio/claim`). It writes no local file, and it never touches other popup kinds in the pending list (announcements, feature tours): completing a popup it does not understand would mean deciding something on the user's behalf without knowing what.
+> This is the plugin's **only** route that changes account state (`POST /astudio/claim`). Its write requests are just two: `init-app` (which the desktop app also calls at launch, and which makes the service settle the day) and `complete` (only ever for `DAILY_REWARD_DIALOG`). It writes no local file, and it never touches other popup kinds in the pending list (announcements, feature tours): completing a popup it does not understand would mean deciding something on the user's behalf without knowing what.
 
 If this page reports "Unavailable" and **Refresh** does nothing, first confirm the plugin artifacts match the running DSH version: DSH loads plugins at startup, so after rebuilding you must **fully quit and restart DSH** (refreshing the page is not enough). If the nav row is missing entirely, the installed plugin predates this section — it shipped in the same change that replaced the composer badge with it.
 
@@ -328,7 +345,8 @@ A refused body is also written to `%TEMP%\dsh-astudio-connect\failed-requests\` 
 - [ ] **A stored sign-in is not refreshed**: once its `ssoSessionId` expires you have to scan again; the plugin does not renew it (upstream exposes no renewal endpoint — the client simply signs in again).
 - [ ] **One QR sign-in per DSH home**: switching accounts means signing out first; no multi-account coexistence.
 - [ ] **The claim button depends on three hard-coded client identity headers**: `clientType` (platform), `studioVersion` and `clientVersion` (both constants, `3.6.0`, tracking the current client release). If upstream ever demands a build number, a signature or a device fingerprint, this path dies immediately and the button will only report "Unavailable".
-- [ ] **The daily reward is only claimable after the desktop app has run**: without the app, upstream never attaches the day's popup, so the plugin polls an empty list and the button truthfully reports "Nothing to claim right now". Measured on `2026-11-05` with the app closed: three header combinations plus a replay of the app's startup endpoints all left it empty; starting the app the same day added 100 immediately. This is upstream's issuance timing, not a defect the plugin can fix — claiming from DSH requires opening AStudio once that day.
+- [ ] **Claiming performs a client initialisation on your behalf**: `tenant-app/v2/init-app` is the call the desktop app makes at launch, and the account service settles the day's login reward while answering it. The plugin calls it the same way — that is precisely why claiming works without the client, and it also means claiming goes one step past "read the balance" by asking the service to settle. If upstream changes that timing or requires extra initialisation parameters, claiming stops working; the button will then say "Unavailable" rather than pretend.
+- [ ] **The claimed amount can only be derived, not read**: current clients send no figure in the popup payload, so the plugin reports the balance difference across `init-app`. Points spent elsewhere during that window make the figure a lower bound, and when neither balance read succeeds no `+N` is shown at all.
 - [ ] **The CLI's `status` now issues one live fetch**: it waits for a real request so it can report the actual catalog source and model count; offline or signed out, it reports `empty` with the matching failure.
 - [ ] **No account-switch following**: unlike WorkBuddy's two variants, AStudio is a single product, so the plugin does not replicate variant-level capabilities.
 

@@ -258,12 +258,16 @@ export type AStudioWebPoints =
 export type AStudioWebClaim =
   | { status: 'claimed', points?: number, balance: AStudioWebPoints }
   /**
-   * Upstream answered `11003002` for every popup found: today's reward was
-   * booked before this press. The one state that proves a claim already
-   * happened, as opposed to merely finding nothing.
+   * A daily dialog was closed while the balance did not move: today's credit
+   * was already on the account before this press.
+   *
+   * Measured on 2026-11-05: the desktop client credits the reward as it
+   * initialises the tenant app and only then shows the dialog, so an unclosed
+   * dialog on an already-credited account is a normal state — usually a client
+   * that was closed before it could dismiss the banner.
    */
   | { status: 'already' }
-  /** Signed in, but the account service is holding no reward for today. */
+  /** The account service settled the day without issuing a reward. */
   | { status: 'none' }
   | { status: 'signed-out' }
   | { status: 'expired' }

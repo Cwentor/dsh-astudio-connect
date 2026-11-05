@@ -1,14 +1,19 @@
 /**
  * AStudio's daily login reward, booked from DSH.
  *
- * The reward is delivered as a popup, not as a calendar: `client-popups/pending`
- * answers a `DAILY_REWARD_DIALOG` carrying the popup id, the instance key and
- * the credit amount, and `client-popups/complete` books it. The desktop client
- * fires that completion itself the moment it receives the dialog — the button
- * in its UI is decoration — which is why this module's "claim" means "tell the
- * account service today's dialog reached a client", not a pledge of anything.
- * The reward is therefore already booked on any day AStudio was opened; this
- * exists so it can also be booked on the days it was not.
+ * The reward is credited during the tenant-app initialisation the desktop app
+ * performs at launch (`tenant-app/v2/init-app`), and announced afterwards as a
+ * `DAILY_REWARD_DIALOG` popup on `client-popups/pending`. `client-popups/complete`
+ * only closes that dialog — measured on 2026-11-05, the balance had already
+ * risen by 100 before any completion was sent, and stayed put when one was.
+ *
+ * That ordering is the whole reason this module exists in its current shape.
+ * An earlier version read `pending` and nothing else, which answers an empty
+ * list on every day the desktop app was never opened: nothing had asked the
+ * account service to settle the day. Claiming now reproduces the app's launch —
+ * initialise, read the popups, close them — so the reward can be booked with
+ * AStudio uninstalled, from a DSH profile, on a machine the app never launched
+ * on that day.
  *
  * Two headers are mandatory (the gateway answers `11001001` without them):
  * `clientType` (`21` on Windows, `22` on macOS) and `studioVersion`. The version
@@ -17,16 +22,21 @@
  * installation, only the `ssoSessionId` the app already wrote to
  * `astron-session.json`.
  *
+ * The amount is read from the balance before and after the initialisation, not
+ * from the popup: current clients send `{ title, content, confirmText }` as the
+ * payload and no figure at all. A payload that does carry `points` is still
+ * understood, for builds that send it.
+ *
  * Every outcome is a named state from {@link AStudioWebClaim}. A booking that
  * could not be made is `unavailable`, never a silent success: the section tells
  * the user what happened, and only `claimed` adds credit to the display.
  *
- * `none` and `already` are kept apart on purpose. `already` is upstream saying
- * `11003002` — proof that this popup was booked before the press. `none` only
- * says the service is holding no reward right now, which is also what an
- * identified-account problem or a not-yet-issued reward looks like; calling
- * that "already claimed" is how the section once told users they had collected
- * a reward they had not.
+ * `none` and `already` are kept apart on purpose. `already` means a dialog was
+ * closed while the balance did not move — the credit was on the account before
+ * the press. `none` means the account service settled the day without handing
+ * out anything, which is what an expired plan looks like; calling that
+ * "already claimed" is how the section once told users they had collected a
+ * reward they had not.
  *
  * @module dsh-astudio-connect/daily-reward
  */
@@ -34,6 +44,16 @@
 import type { AStudioPointsClient } from './points.ts'
 import { ASTRO_STUDIO_API_BASE } from './points.ts'
 import type { AStudioWebClaim } from './status-paths.ts'
+
+/**
+ * Tenant-app initialisation endpoint, resolved against the account API base.
+ *
+ * The desktop app calls this once per launch and the account service credits
+ * the day's login reward while answering it. It is not a claim endpoint and
+ * announces nothing; without it `pending` stays empty all day, which is the bug
+ * that made this module report "nothing to claim" on days AStudio was closed.
+ */
+export const ASTRO_TENANT_INIT_PATH = 'tenant-app/v2/init-app'
 
 /** Popup list endpoint, resolved against the account API base. */
 export const ASTRO_DAILY_REWARD_PENDING_PATH = 'client-popups/pending'
@@ -135,13 +155,17 @@ type GatewayAnswer =
   /** Transport failure, non-2xx, or an unreadable body. */
   | { kind: 'failed' }
 
-/** One claimable daily reward, as the pending list describes it. */
+/**
+ * One claimable daily reward, as the pending list describes it.
+ *
+ * The payload is deliberately not carried: current clients send no amount in
+ * it, so the only figure this module trusts is the balance difference across
+ * the initialisation.
+ */
 interface PendingReward {
   /** A positive integer, not a string — the completion endpoint takes a number. */
   popupId: number
   instanceKey: string
-  /** Announced amount; `undefined` when the payload carries none this module can read. */
-  points: number | undefined
 }
 
 /**
@@ -176,14 +200,6 @@ function readEnvelope(payload: unknown): GatewayAnswer {
   return { kind: 'ok', data: envelope['data'] }
 }
 
-/** The announced amount, or `undefined` when it is absent or unreadable. */
-function announcedPoints(payload: unknown): number | undefined {
-  if (typeof payload !== 'object' || payload === null) return undefined
-  const raw = (payload as Record<string, unknown>)['points']
-  const value = typeof raw === 'number' ? raw : typeof raw === 'string' ? Number(raw) : NaN
-  return Number.isFinite(value) && value > 0 ? value : undefined
-}
-
 /**
  * Pick the daily rewards out of a pending list.
  *
@@ -202,7 +218,7 @@ function pendingRewards(data: unknown): PendingReward[] {
     const instanceKey = item['instanceKey']
     if (popupId === undefined) continue
     if (typeof instanceKey !== 'string' || instanceKey === '') continue
-    rewards.push({ popupId, instanceKey, points: announcedPoints(item['payload']) })
+    rewards.push({ popupId, instanceKey })
   }
   return rewards
 }
@@ -278,15 +294,28 @@ export function createAStudioDailyRewardClient(options: AStudioDailyRewardClient
       // check, so there is nothing to send.
       if (clientType === undefined) return { status: 'unavailable' }
 
+      // The balance before the trigger. Read first because the credit lands
+      // during initialisation: a read taken afterwards alone could not tell
+      // "this press earned 100" from "100 was already there".
+      const before = await options.points.read({ fresh: true })
+      if (before.status === 'expired') return { status: 'expired' }
+      const beforeCredit = before.status === 'ok' ? before.general.remaining : undefined
+
+      // Reproduce the desktop app's launch. This is the call that asks the
+      // account service to settle the day; `pending` on its own mints nothing.
+      // A failure here is not fatal — a reward issued by an earlier session may
+      // still have its dialog open and worth closing.
+      const init = await call(credentials, ASTRO_TENANT_INIT_PATH, { method: 'POST' })
+      if (init.kind === 'expired') return { status: 'expired' }
+
       const pending = await call(credentials, ASTRO_DAILY_REWARD_PENDING_PATH)
       if (pending.kind === 'expired') return { status: 'expired' }
-      if (pending.kind !== 'ok') return { status: 'unavailable' }
-      const rewards = pendingRewards(pending.data)
-      if (rewards.length === 0) return { status: 'none' }
+      const rewards = pending.kind === 'ok' ? pendingRewards(pending.data) : []
 
-      let booked = 0
-      let alreadyBooked = 0
-      let bookedAmount: number | undefined
+      // Only the daily dialog is touched: any other popup in the same list is
+      // somebody else's announcement, and closing it would be acting on the
+      // user's behalf without knowing what for.
+      let closed = 0
       for (const reward of rewards) {
         const answer = await call(credentials, ASTRO_DAILY_REWARD_COMPLETE_PATH, {
           method: 'POST',
@@ -294,35 +323,44 @@ export function createAStudioDailyRewardClient(options: AStudioDailyRewardClient
           body: JSON.stringify({ popupId: reward.popupId, instanceKey: reward.instanceKey }),
         })
         if (answer.kind === 'expired') return { status: 'expired' }
-        // `already` means this popup was booked before this press — by AStudio,
-        // or by an earlier press. It is not a second reward, so it does not get
-        // counted as one: reporting `+100` for a booking we did not make is
-        // exactly the claim the section must not fabricate.
-        if (answer.kind === 'already') {
-          alreadyBooked += 1
-          continue
-        }
-        if (answer.kind === 'ok') {
-          booked += 1
-          if (reward.points !== undefined) bookedAmount = (bookedAmount ?? 0) + reward.points
-          continue
-        }
-        // Nothing booked at all: report the failure instead of a half-claim.
-        if (booked === 0) return { status: 'unavailable' }
-        break
+        // `already` is harmless here: the dialog is gone either way, which is
+        // all this call was for.
+        if (answer.kind === 'ok' || answer.kind === 'already') closed += 1
       }
 
-      // Every popup was refused as already completed: the reward is real and it
-      // is not ours to book again.
-      if (booked === 0) return { status: alreadyBooked > 0 ? 'already' : 'none' }
-
-      // The balance is read fresh through the section's own client, so the number
-      // on screen is in the same vocabulary as every other read. A failed read
-      // does not undo the claim — the document carries its own status.
+      // The balance is read fresh through the section's own client, so the
+      // number on screen is in the same vocabulary as every other read.
       const balance = await options.points.read({ fresh: true })
-      return bookedAmount === undefined
-        ? { status: 'claimed', balance }
-        : { status: 'claimed', points: bookedAmount, balance }
+      const afterCredit = balance.status === 'ok' ? balance.general.remaining : undefined
+      const added = beforeCredit !== undefined && afterCredit !== undefined
+        ? afterCredit - beforeCredit
+        : undefined
+
+      // Credit moved: this press is the reason, whatever the dialogs did.
+      if (added !== undefined && added > 0) return { status: 'claimed', points: added, balance }
+
+      // The dialog list could not be read, so "nothing pending" is not
+      // established — report the failure rather than invent an outcome.
+      if (pending.kind !== 'ok') return { status: 'unavailable' }
+
+      // Settled, nothing issued: no dialog to close and no credit added.
+      if (rewards.length === 0) return { status: 'none' }
+
+      if (added === 0) {
+        // A dialog was closed and the balance did not move, which means the
+        // credit was already on the account. Only an initialisation the service
+        // accepted can support that reading: a failed one leaves the day
+        // unsettled, and "already claimed" would then be a guess.
+        return init.kind === 'ok' ? { status: 'already' } : { status: 'unavailable' }
+      }
+
+      // Balance unreadable on both ends: a closed dialog after a successful
+      // initialisation is the client's own success path, so report the claim
+      // without an amount instead of a failure that did not happen.
+      if (closed > 0) return { status: 'claimed', balance }
+
+      // Payment unconfirmed and the dialog would not close.
+      return { status: 'unavailable' }
     },
   }
 }

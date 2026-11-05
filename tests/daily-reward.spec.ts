@@ -8,6 +8,7 @@ import {
   createAStudioDailyRewardClient,
   ASTRO_DAILY_REWARD_COMPLETE_PATH,
   ASTRO_DAILY_REWARD_PENDING_PATH,
+  ASTRO_TENANT_INIT_PATH,
   ASTRO_CLIENT_VERSION,
   ASTRO_STUDIO_VERSION,
 } from '../src/daily-reward.ts'
@@ -16,11 +17,18 @@ import type { AStudioPointsClient } from '../src/points.ts'
 import type { AStudioWebPoints } from '../src/status-paths.ts'
 
 /**
- * The daily-reward claim: AStudio hands the reward out as a popup, and booking
- * it is one `client-popups/complete`. What is pinned here is the parts that
- * break silently if they regress — the two identity headers the gateway
- * refuses without, the popup selection, and the rule that an outcome this
- * module could not book is never reported as a claim.
+ * The daily-reward claim.
+ *
+ * Measured against the live service on 2026-11-05: the credit lands during
+ * `tenant-app/v2/init-app`, the call the desktop app makes at launch, and
+ * `client-popups/complete` only dismisses the dialog that announces it. These
+ * tests pin that order — without the initialisation nothing is ever issued,
+ * which is why an earlier version reported "nothing to claim" on every day the
+ * app had been closed.
+ *
+ * They also pin the rule that an amount is only ever the balance difference
+ * this press produced: current clients send no figure in the popup payload, so
+ * a test that fed one would be testing a shape the service no longer uses.
  */
 
 const CLEANUP: (() => Promise<void>)[] = []
@@ -73,22 +81,38 @@ function claimCredentialsAt(sessionPath: string): AStudioDailyRewardCredentials 
   }
 }
 
-/** Balance document the shared points client answers with after a claim. */
-const BALANCE: AStudioWebPoints = {
-  status: 'ok',
-  general: { remaining: 1493, total: 2500 },
-  spark: { remaining: 24621, total: 30000 },
+/** A readable balance carrying one general amount. */
+function balanceWith(remaining: number): AStudioWebPoints {
+  return {
+    status: 'ok',
+    general: { remaining, total: 2500 },
+    spark: { remaining: 24621, total: 30000 },
+  }
 }
 
-/** A points client stand-in that records how it was asked. */
-function stubPoints(): { client: AStudioPointsClient, reads: Array<{ fresh?: boolean }> } {
+/** The balance the service answers with when it cannot be read. */
+const UNREADABLE: AStudioWebPoints = { status: 'unavailable' }
+
+/** The pre-claim and post-claim balances of a reward worth 100. */
+const BEFORE = balanceWith(1493)
+const AFTER = balanceWith(1593)
+
+/**
+ * A points client stand-in that records how it was asked and answers from a
+ * sequence: the first read is the "before" balance, the second the "after".
+ */
+function stubPoints(balances: AStudioWebPoints[] = [BEFORE, AFTER]): {
+  client: AStudioPointsClient
+  reads: Array<{ fresh?: boolean }>
+} {
   const reads: Array<{ fresh?: boolean }> = []
   return {
     reads,
     client: {
       async read(options = {}) {
+        const answer = balances[Math.min(reads.length, balances.length - 1)] ?? UNREADABLE
         reads.push(options)
-        return BALANCE
+        return answer
       },
     },
   }
@@ -99,22 +123,31 @@ function envelope(data: unknown, code = 0): Record<string, unknown> {
   return { flag: code === 0, code, desc: code === 0 ? '成功' : 'failed', data }
 }
 
-/** The popup list as the live gateway shapes it: `popupId` is an integer. */
+/**
+ * The daily dialog as the live gateway shapes it on 2026-11-05.
+ *
+ * `payload` carries the wording and no amount at all — the figure only exists
+ * as the balance difference the initialisation produced.
+ */
 function pendingList(): Record<string, unknown>[] {
   return [
     {
-      popupId: 91234,
-      popupCode: 'DAILY_REWARD_2026_11_04',
+      popupId: 2,
+      popupCode: 'DAILY_LOGIN_REWARD_V1',
       popupType: 'BANNER',
       componentType: 'DAILY_REWARD_DIALOG',
       priority: 100,
-      instanceKey: 'instance-1',
-      payload: { points: '100' },
+      instanceKey: '20261105',
+      payload: {
+        title: '今日登录积分已到账',
+        content: '每日登录积分已发放，可前往积分中心查看。',
+        confirmText: '知道了',
+      },
     },
   ]
 }
 
-/** Record every call, answering from a route table. */
+/** Record every call, answering from a route table keyed by the last segment. */
 function recordingFetch(routes: Record<string, () => Response>): {
   fetchImpl: typeof fetch
   calls: Array<{ url: string, init: RequestInit | undefined }>
@@ -148,6 +181,16 @@ function assertCall(call: { url: string, init: RequestInit | undefined }, path: 
   )
 }
 
+/** Every route a happy-path claim needs. */
+function happyRoutes(overrides: Record<string, () => Response> = {}): Record<string, () => Response> {
+  return {
+    'init-app': () => new Response(JSON.stringify(envelope({ banned: false }))),
+    pending: () => new Response(JSON.stringify(envelope(pendingList()))),
+    complete: () => new Response(JSON.stringify(envelope(null))),
+    ...overrides,
+  }
+}
+
 describe('astudioClientType', () => {
   it('maps the two platforms AStudio ships on', () => {
     expect(astudioClientType('win32')).toBe('21')
@@ -160,13 +203,10 @@ describe('astudioClientType', () => {
 })
 
 describe('createAStudioDailyRewardClient', () => {
-  it('books a pending daily reward and reports the reward plus the new balance', async () => {
+  it('initialises the tenant, closes the dialog and reports the credit that landed', async () => {
     const sessionPath = await sessionFile(SIGNED_IN)
     const points = stubPoints()
-    const { fetchImpl, calls } = recordingFetch({
-      pending: () => new Response(JSON.stringify(envelope(pendingList()))),
-      complete: () => new Response(JSON.stringify(envelope(null))),
-    })
+    const { fetchImpl, calls } = recordingFetch(happyRoutes())
 
     const result = await createAStudioDailyRewardClient({
       credentials: () => claimCredentialsAt(sessionPath),
@@ -175,27 +215,108 @@ describe('createAStudioDailyRewardClient', () => {
       clientType: '21',
     }).claim()
 
-    expect(result).toEqual({ status: 'claimed', points: 100, balance: BALANCE })
+    expect(result).toEqual({ status: 'claimed', points: 100, balance: AFTER })
+    // The order is the whole fix: the initialisation is what makes the service
+    // settle the day, so it has to come before the list is read.
     expect(calls.map(call => new URL(call.url).pathname)).toEqual([
+      `/xingchen-studio/${ASTRO_TENANT_INIT_PATH}`,
       `/xingchen-studio/${ASTRO_DAILY_REWARD_PENDING_PATH}`,
       `/xingchen-studio/${ASTRO_DAILY_REWARD_COMPLETE_PATH}`,
     ])
-    assertCall(calls[0]!, 'client-popups/pending')
-    assertCall(calls[1]!, 'client-popups/complete')
-    expect(calls[1]!.init?.method).toBe('POST')
+    assertCall(calls[0]!, 'tenant-app/v2/init-app')
+    expect(calls[0]!.init?.method).toBe('POST')
+    assertCall(calls[1]!, 'client-popups/pending')
+    assertCall(calls[2]!, 'client-popups/complete')
+    expect(calls[2]!.init?.method).toBe('POST')
     // Both values are echoed exactly as the pending list gave them: no
     // signature, no locally invented key.
-    expect(JSON.parse(String(calls[1]!.init?.body))).toEqual({ popupId: 91234, instanceKey: 'instance-1' })
-    // The follow-up balance is a fresh read, never the 30-second cache.
-    expect(points.reads).toEqual([{ fresh: true }])
+    expect(JSON.parse(String(calls[2]!.init?.body))).toEqual({ popupId: 2, instanceKey: '20261105' })
+    // Before and after are both fresh reads: the difference is the amount.
+    expect(points.reads).toEqual([{ fresh: true }, { fresh: true }])
   })
 
-  it('reports none and books nothing when the pending list holds no daily reward', async () => {
+  it('reports claimed even when the dialog itself will not close, because the credit landed', async () => {
     const sessionPath = await sessionFile(SIGNED_IN)
     const points = stubPoints()
+    const { fetchImpl } = recordingFetch(happyRoutes({
+      complete: () => new Response(JSON.stringify(envelope(null, 50000))),
+    }))
+
+    const result = await createAStudioDailyRewardClient({
+      credentials: () => claimCredentialsAt(sessionPath),
+      points: points.client,
+      fetchImpl,
+      clientType: '21',
+    }).claim()
+
+    // The balance moved by 100, so the press did earn it. Refusing to say so
+    // because a banner stayed open would report a failure that did not happen.
+    expect(result).toEqual({ status: 'claimed', points: 100, balance: AFTER })
+  })
+
+  it('reports none when the initialisation issues nothing and no dialog is waiting', async () => {
+    const sessionPath = await sessionFile(SIGNED_IN)
+    const points = stubPoints([BEFORE, BEFORE])
+    const { fetchImpl } = recordingFetch(happyRoutes({
+      pending: () => new Response(JSON.stringify(envelope([]))),
+    }))
+
+    const result = await createAStudioDailyRewardClient({
+      credentials: () => claimCredentialsAt(sessionPath),
+      points: points.client,
+      fetchImpl,
+      clientType: '21',
+    }).claim()
+
+    // An expired plan and an already-collected day both look like this; the
+    // section's wording has to allow for both rather than assert a claim.
+    expect(result).toEqual({ status: 'none' })
+  })
+
+  it('reports already when a dialog is closed but the balance does not move', async () => {
+    const sessionPath = await sessionFile(SIGNED_IN)
+    const points = stubPoints([BEFORE, BEFORE])
+    const { fetchImpl } = recordingFetch(happyRoutes())
+
+    const result = await createAStudioDailyRewardClient({
+      credentials: () => claimCredentialsAt(sessionPath),
+      points: points.client,
+      fetchImpl,
+      clientType: '21',
+    }).claim()
+
+    // The credit was on the account before the press — typically a client that
+    // received the banner and was closed before dismissing it.
+    expect(result).toEqual({ status: 'already' })
+  })
+
+  it('reports unavailable, not already, when the initialisation failed and nothing moved', async () => {
+    const sessionPath = await sessionFile(SIGNED_IN)
+    const points = stubPoints([BEFORE, BEFORE])
+    const { fetchImpl } = recordingFetch(happyRoutes({
+      'init-app': () => new Response(JSON.stringify(envelope(null, 50000))),
+    }))
+
+    const result = await createAStudioDailyRewardClient({
+      credentials: () => claimCredentialsAt(sessionPath),
+      points: points.client,
+      fetchImpl,
+      clientType: '21',
+    }).claim()
+
+    // A failed settlement leaves the day unsettled, so "already claimed" would
+    // be a guess dressed up as a fact.
+    expect(result).toEqual({ status: 'unavailable' })
+  })
+
+  it('ignores non-daily popups entirely', async () => {
+    const sessionPath = await sessionFile(SIGNED_IN)
+    const points = stubPoints([BEFORE, BEFORE])
     const { fetchImpl, calls } = recordingFetch({
+      'init-app': () => new Response(JSON.stringify(envelope({ banned: false }))),
       pending: () => new Response(JSON.stringify(envelope([
         { popupId: 91235, componentType: 'ANNOUNCEMENT_BANNER', instanceKey: 'k', payload: {} },
+        { popupId: 91236, componentType: 'NEW_USER_DIALOG', instanceKey: 'k2', payload: {} },
       ]))),
     })
 
@@ -209,19 +330,13 @@ describe('createAStudioDailyRewardClient', () => {
     expect(result).toEqual({ status: 'none' })
     // Completing a popup this module did not understand would be acting on the
     // user's behalf without knowing what for.
-    expect(calls).toHaveLength(1)
-    expect(points.reads).toEqual([])
+    expect(calls.map(call => new URL(call.url).pathname.split('/').pop())).toEqual(['init-app', 'pending'])
   })
 
-  it('reports claimed without an amount when the popup carries none', async () => {
+  it('reports claimed without an amount when neither balance can be read', async () => {
     const sessionPath = await sessionFile(SIGNED_IN)
-    const points = stubPoints()
-    const { fetchImpl } = recordingFetch({
-      pending: () => new Response(JSON.stringify(envelope([
-        { popupId: 91234, componentType: 'DAILY_REWARD_DIALOG', instanceKey: 'instance-1' },
-      ]))),
-      complete: () => new Response(JSON.stringify(envelope(null))),
-    })
+    const points = stubPoints([UNREADABLE, UNREADABLE])
+    const { fetchImpl } = recordingFetch(happyRoutes())
 
     const result = await createAStudioDailyRewardClient({
       credentials: () => claimCredentialsAt(sessionPath),
@@ -230,17 +345,17 @@ describe('createAStudioDailyRewardClient', () => {
       clientType: '21',
     }).claim()
 
-    // An unparsable amount must not render as "+0".
-    expect(result).toEqual({ status: 'claimed', balance: BALANCE })
+    // A closed dialog after a successful initialisation is the client's own
+    // success path; an unreadable balance must not turn it into a failure.
+    expect(result).toEqual({ status: 'claimed', balance: UNREADABLE })
   })
 
-  it('reports already, not claimed, when every popup was booked before this press', async () => {
+  it('reports unavailable when the dialog list itself cannot be read', async () => {
     const sessionPath = await sessionFile(SIGNED_IN)
-    const points = stubPoints()
-    const { fetchImpl } = recordingFetch({
-      pending: () => new Response(JSON.stringify(envelope(pendingList()))),
-      complete: () => new Response(JSON.stringify(envelope(null, 11003002))),
-    })
+    const points = stubPoints([BEFORE, BEFORE])
+    const { fetchImpl } = recordingFetch(happyRoutes({
+      pending: () => new Response(JSON.stringify(envelope(null, 50000))),
+    }))
 
     const result = await createAStudioDailyRewardClient({
       credentials: () => claimCredentialsAt(sessionPath),
@@ -249,60 +364,11 @@ describe('createAStudioDailyRewardClient', () => {
       clientType: '21',
     }).claim()
 
-    // A second press cannot mint credit — upstream answers 11003002. That is
-    // "the reward is already yours", which is a different sentence from
-    // "+100", and a different one again from "nothing to claim".
-    expect(result).toEqual({ status: 'already' })
-    expect(points.reads).toEqual([])
-  })
-
-  it('reports claimed when one popup booked and another was already done', async () => {
-    const sessionPath = await sessionFile(SIGNED_IN)
-    const points = stubPoints()
-    let completed = 0
-    const { fetchImpl } = recordingFetch({
-      pending: () => new Response(JSON.stringify(envelope([
-        { popupId: 1, componentType: 'DAILY_REWARD_DIALOG', instanceKey: 'a', payload: { points: '100' } },
-        { popupId: 2, componentType: 'DAILY_REWARD_DIALOG', instanceKey: 'b', payload: { points: '50' } },
-      ]))),
-      complete: () => {
-        completed += 1
-        return new Response(JSON.stringify(completed === 1 ? envelope(null) : envelope(null, 11003002)))
-      },
-    })
-
-    const result = await createAStudioDailyRewardClient({
-      credentials: () => claimCredentialsAt(sessionPath),
-      points: points.client,
-      fetchImpl,
-      clientType: '21',
-    }).claim()
-
-    // Only the reward this press actually booked counts toward the amount.
-    expect(result).toEqual({ status: 'claimed', points: 100, balance: BALANCE })
-  })
-
-  it('reports unavailable when the completion itself fails', async () => {
-    const sessionPath = await sessionFile(SIGNED_IN)
-    const points = stubPoints()
-    const { fetchImpl } = recordingFetch({
-      pending: () => new Response(JSON.stringify(envelope(pendingList()))),
-      complete: () => new Response(JSON.stringify(envelope(null, 50000))),
-    })
-
-    const result = await createAStudioDailyRewardClient({
-      credentials: () => claimCredentialsAt(sessionPath),
-      points: points.client,
-      fetchImpl,
-      clientType: '21',
-    }).claim()
-
-    // Nothing was booked, so nothing may be reported as claimed.
+    // "Nothing pending" cannot be concluded from a list that never arrived.
     expect(result).toEqual({ status: 'unavailable' })
-    expect(points.reads).toEqual([])
   })
 
-  it('reports signed-out without touching the network when there is no ssoSessionId', async () => {
+  it('reports signed-out without reading anything when there is no ssoSessionId', async () => {
     const sessionPath = await sessionFile({ modelBearerToken: 'model-value' })
     const points = stubPoints()
     const { fetchImpl, calls } = recordingFetch({})
@@ -316,6 +382,7 @@ describe('createAStudioDailyRewardClient', () => {
 
     expect(result).toEqual({ status: 'signed-out' })
     expect(calls).toEqual([])
+    expect(points.reads).toEqual([])
   })
 
   it('reports unavailable instead of guessing an identity on an unsupported platform', async () => {
@@ -334,6 +401,7 @@ describe('createAStudioDailyRewardClient', () => {
     // service failure, which would hide the real cause.
     expect(result).toEqual({ status: 'unavailable' })
     expect(calls).toEqual([])
+    expect(points.reads).toEqual([])
   })
 
   it('maps a dead session to expired, from the body and from the HTTP status', async () => {
@@ -343,7 +411,7 @@ describe('createAStudioDailyRewardClient', () => {
     const byCode = await createAStudioDailyRewardClient({
       credentials: () => claimCredentialsAt(sessionPath),
       points: points.client,
-      fetchImpl: recordingFetch({ pending: () => new Response(JSON.stringify(envelope(null, 80000))) }).fetchImpl,
+      fetchImpl: recordingFetch({ 'init-app': () => new Response(JSON.stringify(envelope(null, 80000))) }).fetchImpl,
       clientType: '21',
     }).claim()
     expect(byCode).toEqual({ status: 'expired' })
@@ -351,15 +419,32 @@ describe('createAStudioDailyRewardClient', () => {
     const byStatus = await createAStudioDailyRewardClient({
       credentials: () => claimCredentialsAt(sessionPath),
       points: points.client,
-      fetchImpl: recordingFetch({ pending: () => new Response('', { status: 401 }) }).fetchImpl,
+      fetchImpl: recordingFetch({ 'init-app': () => new Response('', { status: 401 }) }).fetchImpl,
       clientType: '21',
     }).claim()
     expect(byStatus).toEqual({ status: 'expired' })
   })
 
+  it('reports expired when the balance read says the session is dead', async () => {
+    const sessionPath = await sessionFile(SIGNED_IN)
+    const points = stubPoints([{ status: 'expired' }])
+    const { fetchImpl, calls } = recordingFetch({})
+
+    const result = await createAStudioDailyRewardClient({
+      credentials: () => claimCredentialsAt(sessionPath),
+      points: points.client,
+      fetchImpl,
+      clientType: '21',
+    }).claim()
+
+    // Nothing is sent to a session already known to be dead.
+    expect(result).toEqual({ status: 'expired' })
+    expect(calls).toEqual([])
+  })
+
   it('reports unavailable when the gateway cannot be reached', async () => {
     const sessionPath = await sessionFile(SIGNED_IN)
-    const points = stubPoints()
+    const points = stubPoints([BEFORE, BEFORE])
     const fetchImpl = (async () => { throw new TypeError('fetch failed') }) as unknown as typeof fetch
 
     const result = await createAStudioDailyRewardClient({
@@ -375,12 +460,11 @@ describe('createAStudioDailyRewardClient', () => {
   it('accepts a popup id that arrives as digits in a string, and sends it back as a number', async () => {
     const sessionPath = await sessionFile(SIGNED_IN)
     const points = stubPoints()
-    const { fetchImpl, calls } = recordingFetch({
+    const { fetchImpl, calls } = recordingFetch(happyRoutes({
       pending: () => new Response(JSON.stringify(envelope([
-        { popupId: '91234', componentType: 'DAILY_REWARD_DIALOG', instanceKey: 'instance-1', payload: { points: '100' } },
+        { popupId: '91234', componentType: 'DAILY_REWARD_DIALOG', instanceKey: 'instance-1' },
       ]))),
-      complete: () => new Response(JSON.stringify(envelope(null))),
-    })
+    }))
 
     const result = await createAStudioDailyRewardClient({
       credentials: () => claimCredentialsAt(sessionPath),
@@ -389,23 +473,23 @@ describe('createAStudioDailyRewardClient', () => {
       clientType: '21',
     }).claim()
 
-    expect(result).toEqual({ status: 'claimed', points: 100, balance: BALANCE })
+    expect(result).toEqual({ status: 'claimed', points: 100, balance: AFTER })
     // `client-popups/complete` is parsed with Number.isSafeInteger upstream, so
     // the id has to travel as a number even when it arrived quoted.
-    expect(JSON.parse(String(calls[1]!.init?.body))).toEqual({ popupId: 91234, instanceKey: 'instance-1' })
+    expect(JSON.parse(String(calls[2]!.init?.body))).toEqual({ popupId: 91234, instanceKey: 'instance-1' })
   })
 
   it('ignores ids the completion endpoint would reject, such as a dev preview', async () => {
     const sessionPath = await sessionFile(SIGNED_IN)
-    const points = stubPoints()
-    const { fetchImpl, calls } = recordingFetch({
+    const points = stubPoints([BEFORE, BEFORE])
+    const { fetchImpl, calls } = recordingFetch(happyRoutes({
       pending: () => new Response(JSON.stringify(envelope([
-        { popupId: -3, componentType: 'DAILY_REWARD_DIALOG', instanceKey: 'DEV_PREVIEW', payload: { points: '100' } },
-        { popupId: 0, componentType: 'DAILY_REWARD_DIALOG', instanceKey: 'instance-0', payload: {} },
-        { popupId: 'not-a-number', componentType: 'DAILY_REWARD_DIALOG', instanceKey: 'instance-x', payload: {} },
-        { componentType: 'DAILY_REWARD_DIALOG', instanceKey: 'instance-y', payload: {} },
+        { popupId: -3, componentType: 'DAILY_REWARD_DIALOG', instanceKey: 'DEV_PREVIEW' },
+        { popupId: 0, componentType: 'DAILY_REWARD_DIALOG', instanceKey: 'instance-0' },
+        { popupId: 'not-a-number', componentType: 'DAILY_REWARD_DIALOG', instanceKey: 'instance-x' },
+        { componentType: 'DAILY_REWARD_DIALOG', instanceKey: 'instance-y' },
       ]))),
-    })
+    }))
 
     const result = await createAStudioDailyRewardClient({
       credentials: () => claimCredentialsAt(sessionPath),
@@ -415,18 +499,15 @@ describe('createAStudioDailyRewardClient', () => {
     }).claim()
 
     // Posting a popup the endpoint cannot parse would fail the whole claim, so
-    // an unusable id is skipped and the press ends as "nothing pending".
+    // an unusable id is skipped and the press ends as "nothing issued".
     expect(result).toEqual({ status: 'none' })
-    expect(calls).toHaveLength(1)
+    expect(calls.map(call => new URL(call.url).pathname.split('/').pop())).toEqual(['init-app', 'pending'])
   })
 
   it('never carries the session cookie into its answer', async () => {
     const sessionPath = await sessionFile(SIGNED_IN)
     const points = stubPoints()
-    const { fetchImpl } = recordingFetch({
-      pending: () => new Response(JSON.stringify(envelope(pendingList()))),
-      complete: () => new Response(JSON.stringify(envelope(null))),
-    })
+    const { fetchImpl } = recordingFetch(happyRoutes())
 
     const result = await createAStudioDailyRewardClient({
       credentials: () => claimCredentialsAt(sessionPath),
