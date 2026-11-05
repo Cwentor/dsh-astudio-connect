@@ -221,6 +221,8 @@ One press is two requests: read the pending list, then report completion. The ba
 
 The third row is deliberately not worded as "already claimed": the two are not the same state. `11003002` is upstream *saying* the popup was booked; an empty list only says the service is holding no reward at this moment — it may not have been issued yet, or the account may not have travelled with the request. Calling that "already claimed" tells someone to stop pressing a button that would still have worked, which is exactly what an earlier version did.
 
+"Not issued yet" is the common case, not the corner one: **the daily popup is only attached to the account once the desktop app starts.** Measured on `2026-11-05` with AStudio not running, every header combination polled `client-popups/pending` and got an empty list with the balance unchanged (7793); replaying the read-only endpoints the app hits on startup (`membership/me`, `points/summary`, `bot/models/configs`) changed nothing either. Starting the app the same day added 100 straight away. So the plugin can claim, but only on days you have already opened AStudio — otherwise there is no popup and the button truthfully reports "Nothing to claim right now". The headers are not the cause: adding `clientVersion` made no difference in an A/B run.
+
 `clientType` (`21` on Windows, `22` on macOS) and `studioVersion` are mandatory (without either, the gateway answers `11001001`). The desktop app also adds `clientVersion` to every request bound for an xfyun domain — both come from `electron.app.getVersion()`, currently `3.6.0` — and the plugin sends all three so its requests match the app's. The version is only shape-checked, which is why a constant works instead of reading the installed app's version, and why this works with AStudio uninstalled.
 
 One more detail `pending` will not forgive: `popupId` is a **positive integer**, and `complete` is parsed with `Number.isSafeInteger` upstream — a string makes the desktop client treat the whole popup config as invalid. The plugin used to read it as a string, which filtered out every reward the service sent while still reporting "already claimed", leaving the reward sitting there for the client to book. It now parses ids the way the client does and skips anything non-positive (the `-3` a preview uses, for instance).
@@ -283,6 +285,7 @@ Five write routes (probing, visibility, claim, and the two sign-in routes) requi
 
 | Plugin version | DSH kernel range it supports |
 |---|---|
+| `0.2.2` | `^0.2.1-rc.2` (from `0.2.1-rc.2`, below `0.3.0`) |
 | `0.2.1` | `^0.2.1-rc.2` (from `0.2.1-rc.2`, below `0.3.0`) |
 | `0.2.0` | `^0.2.1-rc.2` (from `0.2.1-rc.2`, below `0.3.0`) |
 | `0.1.1` | `^0.2.1-rc.2` (from `0.2.1-rc.2`, below `0.3.0`) |
@@ -293,6 +296,8 @@ The plugin declares a kernel range in `peerDependencies`; the host's `evaluatePl
 `0.2.0` carries the same kernel range as `0.1.1` and adds nothing but features: the points section in Settings (balance and the daily claim) and WeChat QR sign-in. One thing to know before upgrading — **from `0.2.0` the plugin writes a credential file to disk**. That is unavoidable for QR sign-in: without the app, somebody has to hold the session. It lives at `$DSH_HOME/.astudio-login.json`, mode `0600`, created only when you scan a code and deleted when you sign out. If you want the old behaviour — read the app's credentials and write nothing at all — stay on `0.1.1`.
 
 `0.2.1` is a fix-only release with an unchanged kernel range. **If you are on `0.2.0`, upgrade: its Claim button never actually claimed anything.** Pending popups carry `popupId` as a positive integer, but the plugin read it as a string, so every real reward was filtered out locally, the UI always said "already claimed today", and the reward sat untouched on the server — opening AStudio still claimed it. `0.2.1` parses the id the way the app does, separates "no pending reward" from an explicit `11003002` answer, and sends the four account-scoped cookies the claim endpoints expect.
+
+`0.2.2` only aligns the request headers, and **does not fix the "claimable only while the client is running" symptom**. Two changes: a new `clientVersion` header (constant `3.6.0`), and `studioVersion` moving from `3.5.5` to `3.6.0` — the desktop app's `fetchWithClientVersion` adds the former to every xfyun request and the plugin never sent it at all. An A/B run before and after this release showed the header is not the cause (see [Known limitations](#known-limitations)), so what this version actually delivers is making a plugin request indistinguishable from the app's, plus writing the real constraint into the docs: the daily reward is only issued after the desktop app has started. Any release note claiming this version fixed claiming is wrong.
 
 ## When the upstream refuses a request
 
@@ -323,6 +328,7 @@ A refused body is also written to `%TEMP%\dsh-astudio-connect\failed-requests\` 
 - [ ] **A stored sign-in is not refreshed**: once its `ssoSessionId` expires you have to scan again; the plugin does not renew it (upstream exposes no renewal endpoint — the client simply signs in again).
 - [ ] **One QR sign-in per DSH home**: switching accounts means signing out first; no multi-account coexistence.
 - [ ] **The claim button depends on three hard-coded client identity headers**: `clientType` (platform), `studioVersion` and `clientVersion` (both constants, `3.6.0`, tracking the current client release). If upstream ever demands a build number, a signature or a device fingerprint, this path dies immediately and the button will only report "Unavailable".
+- [ ] **The daily reward is only claimable after the desktop app has run**: without the app, upstream never attaches the day's popup, so the plugin polls an empty list and the button truthfully reports "Nothing to claim right now". Measured on `2026-11-05` with the app closed: three header combinations plus a replay of the app's startup endpoints all left it empty; starting the app the same day added 100 immediately. This is upstream's issuance timing, not a defect the plugin can fix — claiming from DSH requires opening AStudio once that day.
 - [ ] **The CLI's `status` now issues one live fetch**: it waits for a real request so it can report the actual catalog source and model count; offline or signed out, it reports `empty` with the matching failure.
 - [ ] **No account-switch following**: unlike WorkBuddy's two variants, AStudio is a single product, so the plugin does not replicate variant-level capabilities.
 
