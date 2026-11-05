@@ -302,6 +302,7 @@ GET  agent.xfyun.cn/xingchen-studio/bot/models/configs       → Cookie 用上�
 
 | 插件版本 | 支持的 DSH 内核版本 |
 |---|---|
+| `0.2.4` | `^0.2.1-rc.2`（`0.2.1-rc.2` 起，`0.3.0` 以下） |
 | `0.2.3` | `^0.2.1-rc.2`（`0.2.1-rc.2` 起，`0.3.0` 以下） |
 | `0.2.2` | `^0.2.1-rc.2`（`0.2.1-rc.2` 起，`0.3.0` 以下） |
 | `0.2.1` | `^0.2.1-rc.2`（`0.2.1-rc.2` 起，`0.3.0` 以下） |
@@ -318,6 +319,8 @@ GET  agent.xfyun.cn/xingchen-studio/bot/models/configs       → Cookie 用上�
 `0.2.2` 只做请求头对齐，**不解决「只有客户端开着才能领」那个现象**。改动有两处：新增 `clientVersion`（常量 `3.6.0`），`studioVersion` 从 `3.5.5` 提到 `3.6.0`——桌面端的 `fetchWithClientVersion` 会给所有讯飞域名请求加这个头，插件此前完全没有发过。发版前后的 A/B 实测表明这个头不是原因（见[已知限制](#已知限制)），所以这版的实际价值是把「插件发出的请求与客户端无法区分」这件事做实，以及把「每日奖励只在桌面端启动后才下发」这个限制如实写进文档。谁要是在版本说明里看到这版修好了领取，那话说错了。
 
 `0.2.3` 修的才是真正的根因，**这版真的能脱离客户端领取了**，内核范围不变。缺少的不是请求头（`0.2.2` 猜的那件事，A/B 已经证伪），而是一个调用：桌面端每次启动都会 `POST tenant-app/v2/init-app`，服务端**在这一步**结算当天的登录奖励并把积分打进账户；不调它，`client-popups/pending` 一整天都是空列表。实测（`2026-11-05`，客户端完全未运行，起点余额 7793）：调用前待领列表 0 条、调用后余额 7893 且出现一条弹窗，重复调用不再加分，`complete` 前后余额不变——所以弹窗只是通知，`complete` 只是关掉它。领取按钮现在按「读余额 → init-app → 读弹窗 → 关弹窗 → 再读余额」执行，金额取两次余额的差值（当前客户端的 `payload` 里根本没有金额字段）。顺带修掉一个文档外的问题：`ASTRO_VERSION` 这个常量从 `0.1.0` 起就没再动过，导致「检查更新」和心跳上报一直在报一个早已不存在的版本号；现在与 `package.json` 对齐，并加了断言防止再次漂移。
+
+`0.2.4` 修的是**热重载之后模型选择器里 AStudio 整个消失**，内核范围不变。两个独立缺陷叠在一起：一是 `/astudio/status` 这条路由是本 bundle 里唯一没有用 `ctx.effect` 注册的，插件被 dispose 时它不释放，下一次挂载（live reload 或 `dsh plugin add`）第一条就抛 `webserver: duplicate exact route "/astudio/status"`，而路由是顺序注册的，于是 claim、points、login、probe、visibility 全部没注册上；现在每条路由单独 try/catch，一条失败不再连带其它。二是注册 provider 时模型目录还是空的，而首次 `catalog.refresh()` 要几百毫秒才落地（实测注册于 `07:14:13.964`、目录写入于 `07:14:14.333`），刷新完成后原本没有任何 `llm/adapters-updated` 广播——浏览器按 host generation 缓存模型目录，只在收到该事件时重载，于是那一个 session 内 AStudio 组永远空白，而设置页因为每次现读 `/astudio/status` 一切正常。现在刷新完成会广播一次并打日志 `catalog <source> with N model(s), announced to the picker`。**账上没有掉任何东西**：同一时间用 `model-manager/models` 直连仍是 7 个模型、`modelBearerToken` 有效期到 2029 年——纯粹是前端拿到了空目录。
 
 ## 请求被上游拒绝时
 

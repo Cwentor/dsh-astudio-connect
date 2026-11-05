@@ -77,57 +77,67 @@ export function registerAStudioStatusRoute(ctx: Context, options: AStudioStatusR
   const { store, catalog } = options
   const identity = options.identity ?? ASTRO_LOCAL_IDENTITY
 
-  ctx.webServer.register({
-    kind: 'exact',
-    path: ASTRO_STATUS_PATH,
-    handler: async (req: IncomingMessage, res: ServerResponse) => {
-      // Loopback check. The shared predicate covers every loopback spelling the
-      // host can be reached on — including `[::1]:<port>`, which a split on ':'
-      // reduced to `[` and rejected.
-      if (!hostIsLoopback(req.headers.host)) {
-        res.writeHead(403, { 'Content-Type': 'application/json' })
-        res.end(JSON.stringify({ error: 'forbidden' }))
-        return
-      }
+  // Registered through `ctx.effect` like every other route in this bundle.
+  // Without it the registration is never released when the plugin is disposed,
+  // and the next mount — a live patch reload, or `dsh plugin add` — died on
+  // `webserver: duplicate exact route "/astudio/status"` before it could
+  // register anything else. Since this route is mounted first, that one leaked
+  // handler took the claim, points, login and probe routes down with it
+  // (measured 2026-11-05).
+  ctx.effect(() => {
+    const dispose = ctx.webServer.register({
+      kind: 'exact',
+      path: ASTRO_STATUS_PATH,
+      handler: async (req: IncomingMessage, res: ServerResponse) => {
+        // Loopback check. The shared predicate covers every loopback spelling the
+        // host can be reached on — including `[::1]:<port>`, which a split on ':'
+        // reduced to `[` and rejected.
+        if (!hostIsLoopback(req.headers.host)) {
+          res.writeHead(403, { 'Content-Type': 'application/json' })
+          res.end(JSON.stringify({ error: 'forbidden' }))
+          return
+        }
 
-      const authStatus = await store.status()
-      // Reported alongside the credential state rather than inside it: "signed
-      // in" and "signed in with which sign-in" are different questions, and the
-      // panel answers them in different places.
-      let login: AStudioWebLogin | undefined
-      try {
-        login = store.login?.()
-      } catch {
-        login = undefined
-      }
-      const models = catalog.current()
-      const failure = catalog.failure()
-      const probe: AStudioWebProbe = options.probe === undefined
-        ? { account: identity, results: [] }
-        : buildProbe(catalog, options.probe, identity)
+        const authStatus = await store.status()
+        // Reported alongside the credential state rather than inside it: "signed
+        // in" and "signed in with which sign-in" are different questions, and the
+        // panel answers them in different places.
+        let login: AStudioWebLogin | undefined
+        try {
+          login = store.login?.()
+        } catch {
+          login = undefined
+        }
+        const models = catalog.current()
+        const failure = catalog.failure()
+        const probe: AStudioWebProbe = options.probe === undefined
+          ? { account: identity, results: [] }
+          : buildProbe(catalog, options.probe, identity)
 
-      const body: AStudioWebStatus = {
-        auth: {
-          state: authStatus.state,
-          ...(authStatus.tokenLength !== undefined ? { tokenLength: authStatus.tokenLength } : {}),
-        },
-        catalog: {
-          source: catalog.source(),
-          modelCount: models.length,
-          models: models.map(m => ({ id: m.id, name: m.name })),
-          // An empty roster is a state the card must explain, not a blank list.
-          ...(failure !== undefined ? { failure } : {}),
-        },
-        visibility: {
-          hidden: [...catalog.hiddenModelIds()],
-        },
-        probe,
-        ...(login === undefined ? {} : { login }),
-        ...(options.controlKey !== undefined ? { controlKey: options.controlKey } : {}),
-      }
+        const body: AStudioWebStatus = {
+          auth: {
+            state: authStatus.state,
+            ...(authStatus.tokenLength !== undefined ? { tokenLength: authStatus.tokenLength } : {}),
+          },
+          catalog: {
+            source: catalog.source(),
+            modelCount: models.length,
+            models: models.map(m => ({ id: m.id, name: m.name })),
+            // An empty roster is a state the card must explain, not a blank list.
+            ...(failure !== undefined ? { failure } : {}),
+          },
+          visibility: {
+            hidden: [...catalog.hiddenModelIds()],
+          },
+          probe,
+          ...(login === undefined ? {} : { login }),
+          ...(options.controlKey !== undefined ? { controlKey: options.controlKey } : {}),
+        }
 
-      res.writeHead(200, { 'Content-Type': 'application/json' })
-      res.end(JSON.stringify(body))
-    },
+        res.writeHead(200, { 'Content-Type': 'application/json' })
+        res.end(JSON.stringify(body))
+      },
+    })
+    return dispose
   })
 }

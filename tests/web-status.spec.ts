@@ -44,17 +44,29 @@ function mockProbe(): AStudioProbeStore {
   }
 }
 
-function createMockContext(): { ctx: Context; getRoute: () => { kind: string; path: string; handler: (req: IncomingMessage, res: ServerResponse) => Promise<void> } | undefined } {
+function createMockContext(): {
+  ctx: Context
+  getRoute: () => { kind: string; path: string; handler: (req: IncomingMessage, res: ServerResponse) => Promise<void> } | undefined
+  dispose: () => void
+} {
   let route: { kind: string; path: string; handler: (req: IncomingMessage, res: ServerResponse) => Promise<void> } | undefined
+  const disposers: Array<() => void> = []
   const ctx = {
     webServer: {
       register: (r: { kind: string; path: string; handler: (req: IncomingMessage, res: ServerResponse) => Promise<void> }) => {
         route = r
-        return () => {}
+        return () => { route = undefined }
       },
     },
+    // Every route in this bundle is mounted through `ctx.effect`; the mock has
+    // to run the callback the same way or the route is never registered.
+    effect: (fn: () => () => void) => { disposers.push(fn()) },
   }
-  return { ctx: ctx as unknown as Context, getRoute: () => route }
+  return {
+    ctx: ctx as unknown as Context,
+    getRoute: () => route,
+    dispose: () => { for (const disposer of disposers.splice(0)) disposer() },
+  }
 }
 
 function mockResponse() {
@@ -76,6 +88,17 @@ function mockRequest(host: string): IncomingMessage {
 }
 
 describe('registerAStudioStatusRoute', () => {
+  it('releases the route when the plugin is disposed', () => {
+    // Regression: this route was mounted without `ctx.effect`, so a reload left
+    // it behind and the next mount died on a duplicate route — taking every
+    // route registered after it (claim included) down with it.
+    const { ctx, getRoute, dispose } = createMockContext()
+    registerAStudioStatusRoute(ctx, { store: mockStore('signed-in'), catalog: mockCatalog() })
+    expect(getRoute()).toBeDefined()
+    dispose()
+    expect(getRoute()).toBeUndefined()
+  })
+
   it('serves auth, catalog, visibility, and probe sections', async () => {
     const { ctx, getRoute } = createMockContext()
     registerAStudioStatusRoute(ctx, { store: mockStore('signed-in'), catalog: mockCatalog(), probe: mockProbe() })

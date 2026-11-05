@@ -18,7 +18,7 @@ export const ASTRO_PACKAGE_NAME = 'dsh-astudio-connect'
  * `0.2.0`–`0.2.2`, which made the update route and the heartbeat advertise a
  * version that no longer existed.
  */
-export const ASTRO_VERSION = '0.2.3'
+export const ASTRO_VERSION = '0.2.4'
 
 /**
  * Repository URL reported by the update route.

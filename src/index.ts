@@ -238,7 +238,27 @@ export function apply(ctx: Context, config: Config): void {
     void writeHostHeartbeat()
 
     ctx.logger.info('dsh-astudio-connect: shim listening at', shim.baseUrl())
-    void catalog.refresh().catch(() => {})
+
+    // The provider is registered above with whatever the catalog held at that
+    // instant — on a cold start or a reload that is an empty roster, because the
+    // first refresh has not answered yet. The browser, however, reads the model
+    // catalog as soon as the host announces the plugin, caches it per host
+    // generation, and reloads only on `llm/adapters-updated`. Without the
+    // announce below, that cached copy stays empty for the rest of the session:
+    // the picker lists the other providers and nothing from AStudio, while the
+    // settings card — which reads `/astudio/status` fresh every time — shows the
+    // roster it does have. Measured 2026-11-05: registration at 07:14:13.964 and
+    // the refresh landing 369 ms later, with no announcement in between.
+    void catalog.refresh().then(
+      () => {
+        announceModelsChanged()
+        // Logged because a picker with no AStudio row is otherwise
+        // indistinguishable from a plugin that never started: the host prints
+        // nothing about a provider whose roster happens to be empty.
+        ctx.logger.info(`dsh-astudio-connect: catalog ${catalog.source()} with ${catalog.current().length} model(s), announced to the picker`)
+      },
+      () => {},
+    )
   }).catch((error: unknown) => {
     // Render the error into the message: a bare trailing Error argument is
     // JSON-stringified by cordis and reads as `{}`.
@@ -277,11 +297,25 @@ function registerAStudioWebRoutes(
   // state-changing write (probe, model visibility).
   const controlKey = createControlKey()
 
+  // Each route is mounted through this guard rather than one shared try/catch.
+  // The routes are independent — the card reads status, points and login
+  // separately — but they used to fail as a group: the first mount to throw
+  // aborted the rest, so a stale duplicate `/astudio/status` left a plugin with
+  // a live provider and no claim route at all (measured 2026-11-05). One route
+  // failing is now one route failing.
+  const mount = (label: string, register: () => void): void => {
+    try {
+      register()
+    } catch (error: unknown) {
+      ctx.logger.warn(`dsh-astudio-connect: route ${label} unavailable:`, describeError(error))
+    }
+  }
+
   // Register the status route on the host web server.
-  registerAStudioStatusRoute(ctx, { store, catalog, probe, controlKey })
+  mount('status', () => { registerAStudioStatusRoute(ctx, { store, catalog, probe, controlKey }) })
 
   // Register the update route on the host web server.
-  registerAStudioUpdateRoute(ctx, { currentVersion: ASTRO_VERSION })
+  mount('update', () => { registerAStudioUpdateRoute(ctx, { currentVersion: ASTRO_VERSION }) })
 
   // Register the points route backing the settings section. The cookie comes
   // from the credential store, which prefers the plugin's own sign-in and falls
@@ -289,17 +323,19 @@ function registerAStudioWebRoutes(
   // re-login is picked up by the next ↻ rather than pinning the section to an
   // expired session.
   const pointsClient = createAStudioPointsClient({ sessionId: () => store.ssoSessionId() })
-  registerAStudioPointsRoute(ctx, { client: pointsClient })
+  mount('points', () => { registerAStudioPointsRoute(ctx, { client: pointsClient }) })
 
   // Register the daily-reward claim route. It shares the balance client so the
   // answer to a claim can carry the new numbers, and it is the only route here
   // that changes account state — hence the control key.
-  registerAStudioClaimRoute(ctx, {
-    client: createAStudioDailyRewardClient({
-      credentials: () => store.claimCredentials(),
-      points: pointsClient,
-    }),
-  }, controlKey)
+  mount('claim', () => {
+    registerAStudioClaimRoute(ctx, {
+      client: createAStudioDailyRewardClient({
+        credentials: () => store.claimCredentials(),
+        points: pointsClient,
+      }),
+    }, controlKey)
+  })
 
   // Register the QR sign-in routes. A sign-in changes the token AND the roster
   // it can reach, so the success path drops the cached credential, re-reads the
@@ -310,14 +346,16 @@ function registerAStudioWebRoutes(
     void catalog.refresh().catch(() => {})
     announceModelsChanged()
   }
-  registerAStudioLoginRoutes(ctx, {
-    client: createAStudioQrLogin({
-      save: session => { writeLoginSession(session, astudioLoginSessionPath()) },
-    }),
-    onAuthenticated: afterSignInChange,
-    onSignedOut: afterSignInChange,
-    signOut: () => store.logout(),
-  }, controlKey)
+  mount('login', () => {
+    registerAStudioLoginRoutes(ctx, {
+      client: createAStudioQrLogin({
+        save: session => { writeLoginSession(session, astudioLoginSessionPath()) },
+      }),
+      onAuthenticated: afterSignInChange,
+      onSignedOut: afterSignInChange,
+      signOut: () => store.logout(),
+    }, controlKey)
+  })
 
   // Register the probe route on the host web server.
   const probeService = createAStudioProbeService({
@@ -325,27 +363,31 @@ function registerAStudioWebRoutes(
     token: () => store.resolve(),
     store: probe,
   })
-  registerAStudioProbeRoute(ctx, {
-    service: probeService,
-    // A probe can add or confirm reasoning levels, which the picker renders
-    // from catalog metadata: refresh the snapshot and tell the browser to
-    // re-read it, or the effort menu keeps showing the pre-probe answer.
-    invalidate: () => {
-      void catalog.refresh().catch(() => {})
-      announceModelsChanged()
-    },
-  }, controlKey)
+  mount('probe', () => {
+    registerAStudioProbeRoute(ctx, {
+      service: probeService,
+      // A probe can add or confirm reasoning levels, which the picker renders
+      // from catalog metadata: refresh the snapshot and tell the browser to
+      // re-read it, or the effort menu keeps showing the pre-probe answer.
+      invalidate: () => {
+        void catalog.refresh().catch(() => {})
+        announceModelsChanged()
+      },
+    }, controlKey)
+  })
 
   // Register the visibility route. The adapter's `listModels` reads
   // `catalog.hiddenModelIds()` on every call, so the write is already in effect
   // for the next read — but the browser holds its own catalog and only reloads
   // it when the host announces a change, so a hidden model otherwise stayed
   // selectable until DSH restarted (and failed on selection).
-  registerAStudioVisibilityRoute(ctx, {
-    catalog,
-    store: visibility,
-    notify: announceModelsChanged,
-  }, controlKey)
+  mount('visibility', () => {
+    registerAStudioVisibilityRoute(ctx, {
+      catalog,
+      store: visibility,
+      notify: announceModelsChanged,
+    }, controlKey)
+  })
 }
 
 /**
