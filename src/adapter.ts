@@ -21,9 +21,19 @@ export const ASTRO_PROVIDER = 'astudio'
 /** Provider idle ceiling while one stream read is outstanding. */
 export const ASTRO_STREAM_IDLE_TIMEOUT_MS = 300_000
 
-/** Image-request budgets at the dsh-llm-pi-ai defaults. */
+/**
+ * Image-request budgets at the dsh-llm-pi-ai defaults.
+ *
+ * `maxRequestImages` and `imageOffloadCountQuantum` joined this shape in kernel
+ * `0.2.2`; the values are the adapter's own defaults (50 retained occurrences,
+ * a 10-occurrence offload step). The plugin declares no image-capable model
+ * yet, so they are inert here, but the profile is a resolved one and every
+ * field has to carry the number the kernel would have defaulted to.
+ */
 const REQUEST_IMAGE_BUDGETS = {
   maxRequestImageBytes: 20_971_520,
+  maxRequestImages: 50,
+  imageOffloadCountQuantum: 10,
   requestImagePixelBudget: 4_194_304,
   requestImageMaxBytes: 1_048_576,
 } as const
