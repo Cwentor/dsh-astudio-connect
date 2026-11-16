@@ -302,6 +302,7 @@ GET  agent.xfyun.cn/xingchen-studio/bot/models/configs       → Cookie 用上�
 
 | 插件版本 | 支持的 DSH 内核版本 |
 |---|---|
+| `0.2.5` | `^0.2.1-rc.2`（`0.2.1-rc.2` 起，`0.3.0` 以下；构建与测试基线为 `0.2.1-rc.5`） |
 | `0.2.4` | `^0.2.1-rc.2`（`0.2.1-rc.2` 起，`0.3.0` 以下） |
 | `0.2.3` | `^0.2.1-rc.2`（`0.2.1-rc.2` 起，`0.3.0` 以下） |
 | `0.2.2` | `^0.2.1-rc.2`（`0.2.1-rc.2` 起，`0.3.0` 以下） |
@@ -321,6 +322,8 @@ GET  agent.xfyun.cn/xingchen-studio/bot/models/configs       → Cookie 用上�
 `0.2.3` 修的才是真正的根因，**这版真的能脱离客户端领取了**，内核范围不变。缺少的不是请求头（`0.2.2` 猜的那件事，A/B 已经证伪），而是一个调用：桌面端每次启动都会 `POST tenant-app/v2/init-app`，服务端**在这一步**结算当天的登录奖励并把积分打进账户；不调它，`client-popups/pending` 一整天都是空列表。实测（`2026-11-05`，客户端完全未运行，起点余额 7793）：调用前待领列表 0 条、调用后余额 7893 且出现一条弹窗，重复调用不再加分，`complete` 前后余额不变——所以弹窗只是通知，`complete` 只是关掉它。领取按钮现在按「读余额 → init-app → 读弹窗 → 关弹窗 → 再读余额」执行，金额取两次余额的差值（当前客户端的 `payload` 里根本没有金额字段）。顺带修掉一个文档外的问题：`ASTRO_VERSION` 这个常量从 `0.1.0` 起就没再动过，导致「检查更新」和心跳上报一直在报一个早已不存在的版本号；现在与 `package.json` 对齐，并加了断言防止再次漂移。
 
 `0.2.4` 修的是**热重载之后模型选择器里 AStudio 整个消失**，内核范围不变。两个独立缺陷叠在一起：一是 `/astudio/status` 这条路由是本 bundle 里唯一没有用 `ctx.effect` 注册的，插件被 dispose 时它不释放，下一次挂载（live reload 或 `dsh plugin add`）第一条就抛 `webserver: duplicate exact route "/astudio/status"`，而路由是顺序注册的，于是 claim、points、login、probe、visibility 全部没注册上；现在每条路由单独 try/catch，一条失败不再连带其它。二是注册 provider 时模型目录还是空的，而首次 `catalog.refresh()` 要几百毫秒才落地（实测注册于 `07:14:13.964`、目录写入于 `07:14:14.333`），刷新完成后原本没有任何 `llm/adapters-updated` 广播——浏览器按 host generation 缓存模型目录，只在收到该事件时重载，于是那一个 session 内 AStudio 组永远空白，而设置页因为每次现读 `/astudio/status` 一切正常。现在刷新完成会广播一次并打日志 `catalog <source> with N model(s), announced to the picker`。**账上没有掉任何东西**：同一时间用 `model-manager/models` 直连仍是 7 个模型、`modelBearerToken` 有效期到 2029 年——纯粹是前端拿到了空目录。
+
+`0.2.5` 只动开发依赖，运行时代码一行没改：`devDependencies` 里 17 个 `@deepseek-ai/dsh-*` 从 `0.2.1-rc.2` 升到 `0.2.1-rc.5`（0.2.1 线的最后一版），类型检查、435 个测试与构建现在都跑在 rc.5 的类型声明上。`peerDependencies` 仍是 `^0.2.1-rc.2`，下限不抬，`0.2.1-rc.2` 到 `0.2.1` 正式版的每个版本照旧可加载。真正的变化是**验证基线**：此前只对着 rc.2 编译，现在对着这条线的最新版编译，往后 rc.x 的接口漂移会更早暴露。另需说明，`0.2.2-rc.x` 这一代在宿主的 `includePrerelease` 判定下同样能通过校验，但插件没有在该代上验证过，不在支持承诺内。
 
 ## 请求被上游拒绝时
 
