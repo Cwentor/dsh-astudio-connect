@@ -2,7 +2,7 @@
   "name": "dsh-astudio-connect",
   "displayName": "DSH AStudio Connect",
   "description": "将 AStudio 应用中已登录的模型复用到 DeepSeek Harness — bring AStudio app models into DeepSeek Harness with zero configuration.",
-  "version": "0.2.5",
+  "version": "0.2.6",
   "author": "astudio-connect",
   "keywords": [
     "dsh-plugin",
@@ -68,12 +68,12 @@
   },
   "peerDependencies": {
     "@deepseek-ai/cordis": "^4.0.2",
-    "@deepseek-ai/dsh-attachment": "^0.2.1-rc.2",
-    "@deepseek-ai/dsh-home-paths": "^0.2.1-rc.2",
-    "@deepseek-ai/dsh-host-webserver": "^0.2.1-rc.2",
-    "@deepseek-ai/dsh-llm": "^0.2.1-rc.2",
-    "@deepseek-ai/dsh-llm-pi-ai": "^0.2.1-rc.2",
-    "@deepseek-ai/dsh-settings": "^0.2.1-rc.2",
+    "@deepseek-ai/dsh-attachment": ">=0.2.1-rc.2 <=0.2.1-rc.5",
+    "@deepseek-ai/dsh-home-paths": ">=0.2.1-rc.2 <=0.2.1-rc.5",
+    "@deepseek-ai/dsh-host-webserver": ">=0.2.1-rc.2 <=0.2.1-rc.5",
+    "@deepseek-ai/dsh-llm": ">=0.2.1-rc.2 <=0.2.1-rc.5",
+    "@deepseek-ai/dsh-llm-pi-ai": ">=0.2.1-rc.2 <=0.2.1-rc.5",
+    "@deepseek-ai/dsh-settings": ">=0.2.1-rc.2 <=0.2.1-rc.5",
     "@deepseek-ai/schemastery": "^3.18.2",
     "react": "^18.2.0"
   },
